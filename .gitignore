@@ -1,0 +1,9 @@
+.DS_Store
+.env
+.editor-cache/
+.transcription/
+edits/
+exports/
+video.mp4
+skills.mp3
+

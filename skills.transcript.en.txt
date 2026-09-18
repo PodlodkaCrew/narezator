@@ -1,0 +1,660 @@
+English translation: skills.mp3
+Source language: Russian
+Source transcription: ElevenLabs Scribe v2
+Translation: Terra (gpt-5.6-terra)
+Speaker labels and timestamps refer to the original recording.
+Timestamps: HH:MM:SS.mmm. Each section is at most 60 seconds.
+
+[00:01:53.660 - 00:02:11.960] Speaker 2
+Mm-hmm. Max, could you tell us: among the most popular skills, which ones would you call the most—not useful, listeners can probably work that out for themselves—but specifically useless or harmful, which people nevertheless keep, uh, using?
+
+[00:02:13.540 - 00:02:57.100] Speaker 3
+Yeah, uh, [laughs] that's such a great question, because harmfulness is hard to define. I guess I'll start by generally describing the kinds of requests people have of skills, in a few categories, and then we'll derive harmfulness from that. First of all, when it comes to skills, people are still interested in whether a skill changes the model's behavior somehow, right? That is, how much a skill changes a baseline model that hasn't seen that skill; how much the output—what the model generates, how it acts—changes when that skill is present. That's one very, very important point.
+
+[00:02:57.500 - 00:03:28.150] Speaker 3
+The second point is, naturally, how much a skill, uh, [clicks tongue] describes some determ—some workflow, pipeline, some important piece of knowledge that isn't present in the model or that the model, well, wouldn't activate by default, right? And, um, I mean... I'm having trouble putting this together now, sorry [laughs]. Um, okay, I-I lost the thread a little. Um, so—
+
+[00:03:28.200 - 00:03:28.580] Speaker 1
+You can come back to it.
+
+[00:03:28.620 - 00:04:18.180] Speaker 3
+So, yeah. The first and most important thing I wanted to say is about, um, [clicks tongue] this delta between the situation where there's no skill and the situation where there is one. How large that delta is. And naturally everyone is interested in how useful that delta will be, how much usefulness the skill brings. But there are also situations where a skill has a negative effect, and only the user who actually connected that skill can measure that negative effect. And of course it will be different for every user. In the industry as a whole, I guess, there are established ideas of what counts as a bad skill. First, it degrades the model's performance compared with a situation where the skill isn't there.
+
+[00:04:18.459 - 00:05:17.000] Speaker 3
+That is, say we're solving an algorithmic problem, or one where there is a ground-truth answer, which we can lock down with unit tests; and after solving it, it turns out the skill makes the number of tests passed go down. That's a negative example. The second situation is when a skill, for example, doesn't materially affect the final quality at all. The output ends up having the same content as it would without the skill, but the token count, cost, or runtime—the time an agent takes to do the task—goes up. Or, for example, the number of frustrations goes up, and you can only track that in the logs. [clicks tongue] This happens often, because models are still very, very smart, and we'll talk about that a little later. Some skills become obsolete quickly; in principle they aren't needed at all.
+
+[00:05:17.440 - 00:05:56.590] Speaker 3
+But when the model sees a skill that contradicts something it is certain is true, for example, or contradicts a web-search call that gives entirely different information—when the skill comes into that kind of clear factual contradiction with what the agent or model observes in the environment where it works—it can still, um, recover from the situation because it's very smart. And that also turns out to be a negative effect of the skill. That's probably the answer [laughs].
+
+[00:05:56.600 - 00:06:10.960] Speaker 2
+Let me clarify something: nobody deliberately makes, in advance, skills that will make the model worse, that will, uh, do whatever else. How is it that such skills can exist at all and be harmful? [laughs]
+
+[00:06:11.780 - 00:06:51.600] Speaker 3
+Yeah, they do exist. First of all, it's very hard to keep track of what a model can and can't do, because they are updated every week, every month. The development process is still set up so that at some point a team pins the model it is working with and the agents that use it. Maybe they measure model performance with the skill taken into account, and at that point there is a benefit. But over time, if you don't carefully monitor skills—which we can discuss too—all those metric dashboards become obsolete.
+
+[00:06:52.000 - 00:07:41.120] Speaker 3
+And at some point a new model version comes out, and it turns out the skill simply isn't needed anymore, because the labs have distilled it into the new model from previous versions; it has already learned everything. No one starts work with the aim of finding a harmful skill [chuckles]. That doesn't happen. Everyone approaches the task with the best of intentions. It's probably easier to formulate which skills are useful. In my view, there are three broad categories.
+
+[00:07:41.450 - 00:08:38.180] Speaker 3
+Skills that describe the API for some library, framework, or service, because those change very quickly and the information can be put into a skill effectively. Second, ones that encode what the literature calls procedural knowledge: a pipeline of actions that you want an agent to execute repeatedly, without having to prompt it every time. You can write it up as an instruction that functions as a skill. And third, specialized private knowledge that isn't available anywhere, or is very hard to get through web search or for an agent to derive on its own; [clicks tongue] it would take the agent a great deal of compute to get it, and it speeds the agent up in reaching its goal.
+
+[00:08:38.450 - 00:09:31.300] Speaker 3
+This is a toy example, but you could put an idea for solving the Navier–Stokes problem into a skill and give it to the agent as a seed from which it starts solving the problem. Those are the three main signs of useful skills. Harmful skills are the ones that don't fit that description. But again, it's very hard to say in advance whether a skill will be harmful. You need an eval: some proxy, some attempt to measure the negative effect. Often it only becomes apparent not from one sample, but when lots of users turn to the skill and such negative effects arise. [chuckles]
+
+[00:09:35.020 - 00:10:33.720] Speaker 1
+I'd like to talk a little about how models actually use skills. Since skills appeared, I think everyone has learned about one particular mechanism for them, called progressive disclosure. The whole point is that you don't load any huge, complex, unnecessary descriptions into the model's context; you load only, say, the skill name and one line describing it. The model loads the rest only once it decides it is time to invoke the skill. And that is where the most interesting part lies, I think. How is the decision actually made that it is time to invoke a skill? Does the model do it based on its weights? Does the harness do it? Or is there some separate clever search through all these skills? In short, tell us how this mechanism works.
+
+[00:10:34.660 - 00:11:34.220] Speaker 3
+Yeah, I'll start with a disclaimer about progressive disclosure. It really is a very cool mechanism. In theory, when you have a skill with lots of nesting, it is super useful. If you look at the Skills.sh registry, which is a popular—uh, I don't know whether it's open source or not, anyway, Vercel supports it—and it is a registry where anyone can upload skills. At one point I analysed the distribution of their lengths. It turns out that in most cases it is just one skill.md file. In practice, all the benefits of progressive disclosure break down very quickly, because invoking a skill is generally followed by reading the entire file, through the agent harness's read_file command or grep'ing every line of that skill.md. So it is a nice marketing move, but in reality it is not used very often.
+
+[00:11:34.640 - 00:11:42.150] Speaker 2
+Wait, can I ask a quick question? Does that mean it is one file because people simply aren't following the best practices for the architecture—
+
+[00:11:42.160 - 00:11:42.530] Speaker 3
+Yes, that is—
+
+[00:11:42.700 - 00:11:44.780] Speaker 2
+...of those skills. Mm-hmm. Yes.
+
+[00:11:44.820 - 00:11:44.990] Speaker 3
+Yes, one skill—
+
+[00:11:45.000 - 00:11:52.100] Speaker 2
+And is it actually large, or is it really short—people have simply written their little prompt there as a template and that's it?
+
+[00:11:52.800 - 00:12:16.400] Speaker 3
+It varies. The point is that it is still a skill.md file, so it is one file. And generally, [clicks tongue] most harnesses are currently arranged so that when an agent understands it needs to trigger a skill, it just reads that skill.md, right? Then it decides from that skill.md which other files from the skill to read.
+
+[00:12:16.440 - 00:12:16.820] Speaker 2
+Mm-hmm.
+
+[00:12:16.880 - 00:13:01.586] Speaker 3
+But if the whole skill is just one skill.md, then in practice all the marketing advantages of the progressive-disclosure concept—that we will go into the references subfolder and read only a particular file—quickly break down. And you can try to think about why that happens. It happens for many reasons. One is that people very often generate skills from trajectories or with agents. Unless you explicitly tell agents to do otherwise in the prompt, they have no tendency to make complex nested structures; they just cram everything into one file. That's one reason; the second—
+
+[00:13:01.596 - 00:13:05.456] Speaker 2
+Isn't there a suitable skill for that? [laughs] I can't help asking.
+
+[00:13:06.176 - 00:14:01.496] Speaker 3
+There are suitable sk-skills, absolutely, one hundred percent. But making a really large, nested skill, connecting a whole pile of resources, takes real effort. The other reason is that there are several studies on this: [clicks tongue] as the depth of a skill increases, the model starts to suffer. It begins to under-explore. If the needed fact is stored deep in a nested folder structure inside the skill, the chances it will find it—by realising it needs to read the first file, the second, the third, and so on, until it reaches that needle in a haystack—decrease with depth.
+
+[00:14:01.776 - 00:15:01.076] Speaker 3
+But if it is all simply skill.md, the model will read it and see everything in any case, and the probability that it reacts appropriately to the fact you need it to take into account will be higher. So that was a very long digression about why progressive disclosure is great. It will probably work once models genuinely reach the stage where they can reliably, consistently perform deep search. But I think the reason it does not happen now is that there simply are not many skills structured that way. People themselves try to make small, compact skills, so there is no nested structure. And when labs train further on this data, they generally end up with skills of a very simple structure.
+
+[00:15:01.656 - 00:15:13.156] Speaker 3
+And that affects the fact that agents—well, models—are poor at exploring a skill's depth. So, that's how it is.
+
+[00:15:13.196 - 00:15:20.766] Speaker 2
+It turns into a chicken-and-egg problem. Models explore depth poorly, so people don't really [laughs] make deep skills.
+
+[00:15:20.796 - 00:16:17.676] Speaker 3
+If you dig into all LLM concepts, you eventually find that this chicken-and-egg problem is everywhere [laughs]. At some point there is still a flywheel, a data wheel, so to speak. It gets resolved somehow, but over time. I think that the more agents produce knowledge they arrive at while working autonomously on some task, the more likely it is that, when such data is added at mid-training, post-training, and the different stages of model training, skills will improve substantially too. But at the moment it is still a fact that this pipeline does not work very well, and it is better to keep a skill flat: try to describe everything in skill.md.
+
+[00:16:19.936 - 00:17:09.976] Speaker 3
+But that does not answer the question [laughs] we are asking here at all. The question was: what determines how these skills will be used? [clicks tongue] It is true that the harness is central here, because when we say we interact with a model, we are actually accustomed to interacting with an agent. And an agent is the harness—the source code for the tools that determines what the agent can do and what it has access to—plus the model. In particular, for a model to work well with skills, it needs to be fine-tuned on data that teaches it how to use those skills.
+
+[00:17:10.736 - 00:18:10.176] Speaker 3
+For example, when Anthropic launched the very first version of skills, it was clear they had not changed the model at all. All the knowledge about skills was part of the system prompt, which is built in and invisible to us; it is specified in the harness. The model figured out whether to pull in a skill or use one solely from the instruction it saw in the system prompt. There were definitely skills tags there listing the available skills. The model itself decided whether to use a skill at that point. And skill activation was at a very low level. Even when there were two or three skills, the activation rate—the model's deciding to pull in a skill—was rather poor.
+
+[00:18:10.216 - 00:19:10.208] Speaker 3
+Unless you explicitly wrote, 'Use this skill right now.' They did that intentionally because, in my view, they did not know that the concept of skills would grow so much. People really liked the idea of creating context, because it can augment the model's capabilities so much: encode custom pipelines and change model behavior however you want. In the three or four months since October 2025, when they announced it, they apparently collected an initial body of data and fine-tuned everything on it. The next Opus was already much better. When I worked at a startup, we monitored how the same requests changed on the same skills site, where the skills ought to trigger for that request. We saw the activation rate rise sharply as the model became smarter.
+
+[00:19:10.328 - 00:20:10.268] Speaker 3
+So the central part that determines whether skills trigger consists of two things. First, the harness, which determines which specific skills are available and perhaps provides a tool telling the agent how to retrieve them. But ultimately, based on the context it is given—for example, a user request, a dialogue with the user, or a task set up autonomously—the model itself must first realise either that it needs to call a command directly to load a skill from the system prompt, or that it should use a tool such as RAG search or some other search to find and pull in the relevant skill and then
+
+[00:20:10.308 - 00:20:13.248] Speaker 3
+read it. Yes, the harness determines that.
+
+[00:20:14.828 - 00:20:37.777] Speaker 1
+Okay. How do you handle the situation where the request given to a model contains several skills that are very similar to one another? I don't know: one skill says, 'I'm an expert frontend developer,' and another says roughly the same thing. How are priorities resolved then, and how can they be controlled?
+
+[00:20:38.948 - 00:21:37.468] Speaker 3
+This is actually a contradiction, because the guides for writing good skills say first and foremost that the description field should be unique and as different as possible across skills. So the fact that there are overlapping skills is a warning sign that the system has some kind of oversaturation, so to speak, and that they need either to be merged or otherwise sorted out. But that is on the user's side. If we still observe a situation where two skills are loaded into the context, very smart models can read both skills and then decide at their own discretion which one is more relevant to the task currently being solved. Again, smart models do that.
+
+[00:21:38.008 - 00:22:18.348] Speaker 3
+They will read everything. Less capable models, unfortunately, are likely—because they have nevertheless been trained to call commands related to skills—to take either the first or the last one in the list. Generally, they will forget that there are several overlapping skills and choose the one that, according to their training, appeared earlier. So ultimately we rely on the model's internal reasoning about which skill to apply in a given situation.
+
+[00:22:20.088 - 00:23:04.948] Speaker 1
+Listen, that is actually what conceptually bothers me about the very idea of skills. I have absolutely no problem with skills we invoke explicitly, because that is a very convenient way to extend a model's functionality. You say explicitly: 'Model, this skill contains a workflow; invoke it and follow that workflow.' But the story with implicit skills is—I don't know—some kind of nonsense, honestly. You assume, you hope, that the model will invoke the skill at the right moment. And if it does not, you will not even know about it, because no reasonable person is going to sit and read through those logs. You get banner blindness immediately. I don't know whether I'm unusual in this, or whether implicit skill invocation really cannot be trusted.
+
+[00:23:05.988 - 00:23:54.028] Speaker 3
+Yeah, that is a kind of hot take: were skills really invented to be invoked implicitly at all? Was that scenario actually intended? My view is that no: skills exist either to be used forcibly—that is, applied even in an autonomous workflow through a hard-coded instruction saying, 'When solving the task, use this collection of skills'—or, as you said, when you are in a session with your agent, you make every effort on your side to be specific and make the agent understand that it must now perform the task using the skill. Different harnesses have different shortcuts for this.
+
+[00:23:54.308 - 00:24:38.408] Speaker 3
+As far as I know, in Claude there was at one point a slash command: when you were talking in UI mode, you could type a slash, the available skills would be highlighted, and you could click the one already loaded in the context and use it; it would then be immediately added to your prompt. Or you could do this in some harnesses with hooks, where you force the use of particular skills on every request. It is still an interesting question of whether to use skills explicitly or not.
+
+[00:24:38.468 - 00:25:29.248] Speaker 3
+Because when you build, say, a data factory or a software factory, you need to run agents autonomously that may solve open-ended tasks related to your services. They will need skills from the internal registry in any case, and they need somehow to figure out which skills to use and how. But then it reduces to a search task: before solving the task, the agent must conduct a good analysis and investigation of which relevant skills to load. It does that independently, autonomously, without involving the user at all, because these are different use cases.
+
+[00:25:29.728 - 00:26:28.008] Speaker 3
+You have to distinguish implicit skill invocation in sessions where you are present as a person from implicit invocation when an agent solves a task autonomously. To summarise briefly: when a user is involved, I think implicit skill invocation is useless and you should always try to invoke them explicitly. When it comes to autonomous agents solving long-horizon tasks and so on, you need to think through the search component well. Uber recently published a very interesting study about how they built their system. They have, I think, three and a half thousand internal skills, and a certain category of tasks is solved fully in the cloud by an autonomous agent based only on a PR, a ticket, or a user prompt.
+
+[00:26:28.328 - 00:26:41.108] Speaker 3
+And in that situation, the agent itself decides, first of all based on some implemented smart search, which skills to select and use in solving the task.
+
+[00:26:42.328 - 00:26:46.528] Speaker 2
+And where is that search logic implemented specifically at Uber?
+
+[00:26:47.168 - 00:26:51.668] Speaker 3
+Again, perhaps that is part of the harness, right? Because—
+
+[00:26:51.728 - 00:26:53.418] Speaker 2
+Some part of it, its, its, some—
+
+[00:26:53.608 - 00:27:52.988] Speaker 3
+Yes, yes, yes. Most likely all large companies have their own custom harnesses, either layered on top of vanilla Claude Code, Codex, and others, or fully home-grown ones, because writing your own harness is not especially difficult now. There is open-source stuff, and you can implement any mechanism you want for skill search or presenting skills to the model. In short, this is a step taken before the agent solves a task: from a huge collection of, say, more than three thousand skills, we filter down to the top hundred so recall is as high as possible. Even if we pull in something extra, we will not miss anything important. Then the agent, assuming it is a very smart model, begins solving the task autonomously.
+
+[00:27:53.508 - 00:28:14.328] Speaker 2
+I think the boundary of implicitness disappears in that case. If we have implemented search logic, that too is in some sense an explicit skill invocation. It is not as though something magically happens solely at the model level. It is a philosophical [chuckles] [laughs] question of what is explicit and what is implicit.
+
+[00:28:14.788 - 00:28:59.128] Speaker 3
+But the [noise] skill-search problem is not very pressing now, I think, because the number of skills to search through is limited—at most tens of thousands. Even Skills as a Service has, I think, thirty-five thousand skills or something; perhaps I am wrong and it is nearer a hundred thousand, but it is still solvable. If we get to a million or more, finding the relevant skill that solves the task will become much more acute. At present, popular harnesses do not solve search intelligently.
+
+[00:28:59.228 - 00:29:19.168] Speaker 3
+As a user, you simply put all the skills you want available into a folder, or somehow give the agent access through custom tools to search for relevant skills; out of the box, nothing particularly smart is supported.
+
+[00:29:21.028 - 00:29:27.628] Speaker 2
+It feels as though we want the model to get smarter rather than the number of skills to grow to a million. But that is a separate topic, I think.
+
+[00:29:28.028 - 00:30:24.896] Speaker 3
+Yes, but that is actually what happens over time. [chuckles] Every new model release becomes smarter, and more and more skills remain useless. Among the categories we listed—API documentation, a standard workflow such as video editing, anything where a repeated pattern can be traced—it all gets distilled into model weights, and skills quickly become unnecessary. But when it comes to proprietary knowledge that is unavailable from outside in any event—and assuming labs are not training on private data, which I hope they are not—the only way is to keep the entire knowledge base in these skills. There is another interesting point here.
+
+[00:30:24.996 - 00:30:51.436] Speaker 3
+We can reason that models become better at searching over time. When they do a grep or a web search, for example, they formulate the prompt—the thing they want to find—more intelligently. As a result, that can sometimes avoid the situation where they need a particular skill.
+
+[00:30:51.536 - 00:30:51.776] Speaker 2
+Mm-hmm.
+
+[00:30:54.936 - 00:30:58.246] Speaker 1
+Okay, technical pause. Katya, is your part next, because one—
+
+[00:30:58.296 - 00:31:01.196] Speaker 2
+Yes, I wanted to—yes, we discussed it in general. Mm-hmm, mm-hmm.
+
+[00:31:01.236 - 00:31:01.516] Speaker 1
+Yes.
+
+[00:31:01.576 - 00:31:01.836] Speaker 2
+Okay.
+
+[00:31:03.216 - 00:31:08.106] Speaker 3
+I don't know, I can say something else, I think, because I [chuckles] haven't said everything I wanted to say. Uh—
+
+[00:31:08.256 - 00:31:10.816] Speaker 1
+So what else did you want to say? I can ask about it then.
+
+[00:31:11.636 - 00:31:14.926] Speaker 3
+Probably about how models learn now, because—
+
+[00:31:15.576 - 00:31:16.976] Speaker 2
+Then you can count it after all.
+
+[00:31:17.356 - 00:31:39.736] Speaker 1
+Oh, all right, let me ask then, because I think we have already discussed this a bit. Let me ask the question now, and then we'll see what happens. Okay. Let me think how to approach it. Right. Then let's unpack it in a little more detail. How do models learn over time to activate these skills better, if, as you said, that process is happening in general?
+
+[00:31:40.436 - 00:32:38.436] Speaker 3
+Mm-hmm, mm-hmm. Yes. They learn it because every new model release includes further training on some new data. As a rule, all large labs already have their own harnesses, so it is easier for them to generate this data flywheel, collect trajectories or telemetry, and study how users use skills. First, from generated trajectories they can run positive and negative cases through automatic classifiers. For example, suppose a set of skills is available in the system prompt, there is a trajectory of a user's dialogue with [clicks tongue] an agent, and the skill is not invoked, and the user may get frustrated about that.
+
+[00:32:38.496 - 00:33:29.216] Speaker 3
+At some point a message will appear: 'You idiot, invoke that skill for me already. Why are you so dumb that you do not understand I need it?' That is an explicit frustration signal showing that this trajectory is definitely useful to add to the data: something went wrong. The same applies to positive trajectories. We see that skill descriptions are available in the system prompt; the user interacts, at some point needs to trigger a skill, and the model realises it needs to do so. All that data ultimately goes, most likely, into post-training, most likely SFT, where we fine-tune on a next-token-prediction task.
+
+[00:33:29.696 - 00:34:28.016] Speaker 3
+In that way, the model comes to understand when it is better to pull in skills based on what is available to it. One hundred percent, all large labs now have a separate field in their system prompts, inside skills tags, saying that custom skills supplied by the user may be available and that their descriptions will be presented between those skills tags. If you see that the user's request is relevant to one of the skills, be sure to activate it and call the special tool that reads it. Skills are now first-class citizens: at the level of model weights, models learn that the system prompt contains this instruction about whether to include skills.
+
+[00:34:28.916 - 00:35:26.896] Speaker 3
+It is very noticeable in Kimi models. When the first Kimis came out, they were really not very good at activating skills. And they also had trouble following instructions from skills, which is an important element. When you have a skill, it matters that the model follows the instructions described there. There was an interesting fact in an article—I worked on that article myself; we can insert it. We measured how different Kimi-family models [clicks tongue] follow instructions described in a skill. It came out at around 60–70%, whereas Opus and the latest GPT models were at 80-plus, 90. We can only speculate about why, because naturally nobody talks about it.
+
+[00:35:27.176 - 00:36:19.256] Speaker 3
+One reason may be that the model understood it needed to read the skill, but the importance of the encoded instructions did not override what the model itself knew. It is very important to add a sentence to the system prompt that if you trigger a skill, the model must follow what the skill describes and the instructions set in it, rather than what it thinks or assumes from its own policies. Instruction following is a huge topic. In early Kimi models, it was a problem.
+
+[00:36:20.944 - 00:36:26.164] Speaker 2
+Make no mistakes. Follow [laughs] instructions. Make no mistakes.
+
+[00:36:26.264 - 00:37:05.284] Speaker 3
+Yes, yes. It is one thing when a skill asks for something that fundamentally contradicts the model's safety policies; finding that boundary is also very subtle. But when a skill says, 'I want to make a web page on this stack, with this pipeline, using these steps,' and the model ignores it, that is a major problem. It means it is insufficiently trained to give greater weight to instructions the user supplied and keeps falling back to its factory settings.
+
+[00:37:05.864 - 00:37:23.524] Speaker 2
+I think you made an interesting point in saying that finding this boundary is subtle. Could you unpack it a little more? Perhaps there are cases of jailbreaking a model through skills because follow instructions worked one hundred percent?
+
+[00:37:24.324 - 00:38:08.544] Speaker 3
+Yeah, but I think that also falls under the topic of checking skills for security, right? That is, when we want to create a skill, we want it to be safe. And there are some vendors, some companies, that specifically work on, uh, assessing a skill's safety. As a rule, they do that through natural-language prompting too, right? Some verifier agents look at whether a skill really doesn't, uh, introduce things like jailbreak behavior, doesn't introduce vulnerabilities, doesn't con-- doesn't contain any, uh, hidden instructions. So, uh, it's true that a skill can contain a hidden attack. Uh, yeah.
+
+[00:38:08.704 - 00:38:55.164] Speaker 3
+And again, if a model is encountering this kind of skill format for the very first time and hasn't been especially trained to work with it, it may give in, give in to that unfamiliar situation, because it will be an out-of-distribution situation, uh, and you can jailbreak it that way. But in principle, I think this is becoming less and less of a problem because, well, first of all, uh, when Fable launched, it was trained so heavily, and the classifier for falling back from Fable to Opus was so strict, that if it simply saw any mention of security, it would switch to the safer model just based on keywords. That is, that's one radical way to solve it: whenever you see [laughs] any mention of a sensitive topic.
+
+[00:38:55.504 - 00:39:47.364] Speaker 3
+But another approach is trying to run things through these, uh, additional third-party safety providers that try to assess a skill's safety, and they already do that using various techniques. Uh, and the third is for the model-- for the labs, the people training their models, to train these safety classifiers themselves, which will separate, uh, cases where something is questionable, uh, from a completely, you know, reasonable situation. But again, I think that because all of this happens in natural language, and natural language is never precise, uh, I'm not sure it can be solved one hundred percent, so that instruction following is perfect.
+
+[00:39:48.584 - 00:40:14.784] Speaker 3
+Unless the skill is, so to speak, a spec, a specification that thoroughly describes, uh, all desired and undesired behaviors. But naturally nobody writes skills that way; everyone, uh, basically only reflects the golden path, the, like, best-- the way it should be used, conditionally speaking. And so sometimes there is this, mm, lack of something being said, and the model may simply fail to realize that it is breaking something.
+
+[00:40:15.944 - 00:40:30.704] Speaker 2
+On your point that ‘Nobody writes skills that way,’ let's talk about how skills should be written. And let's start with a clear list, you know: the top five signs of the things that, uh, make a skill good.
+
+[00:40:31.684 - 00:41:31.004] Speaker 3
+Mm-hmm. Yeah. Uh, I think that, mm, this list can start with these points. Well, first, a skill is good if it gives the agent that unique expertise or some, uh, what is called opinionated knowledge, right? That is, a particular way to solve a problem, uh, in line with your preferences. That's the first point. The second point is that you, as the skill's creator, as the person working on, uh, developing it, have, uh, some data, some experiments, evals that confirm that this skill is really needed. It is a very difficult thing, how to make-- how to make an eval, uh, because naturally, when you as a user, you know, talk with an agent and, I don't know, see a button saying ‘convert your skill— convert a trajectory into a skill,’ you don't think very much about, uh, collecting some data, some evals that would, you know, confirm it is a good skill.
+
+[00:41:31.284 - 00:42:23.624] Speaker 3
+Still, this layer of needing telemetry to confirm that a skill, uh, [clicks tongue] will be useful is necessary in one form or another. So, uh, third: you need to have a good idea of how you will use the skill. Again, going back to where we started. Will it be forced, uh, use? That is, will the skill always, for example, be explicitly available to the agent, and will the agent be explicitly instructed that it has to use it? Or will the user-- or is it assumed that the user will invoke it because the user will explicitly write that a skill is needed, or will this be an autonomous setup, in which case there will be this search component, where the agent first has to find it among, uh, a skill registry. Why is this point important? Because, uh, this problem of whether the skill was pulled in and whether it was invoked becomes, you know, very critical.
+
+[00:42:23.724 - 00:43:21.248] Speaker 3
+If you want to optimize, uh, minimizing user frustration, then naturally you need to invest in it having a very good description, right? That is, the skill needs to be very clear and, uh, specifically describe, uh, when it should be [clicks tongue] enabled. That's the third point. Uh, the fourth is what we said right at the very beginning: you shouldn't make it deeply nested. Uh, After all, creating a skill, like software, is an iterative thing. So it's better to keep a skill more or less, uh, at the level of a SKILL.md file, generally as flat as possible, and only deepen it as needed, as you understand that, okay, new behavior patterns have emerged. And the fifth is to follow official guides, right? That is, uh, there is agentskills.io. They are kind of the official provider of this skill format.
+
+[00:43:21.888 - 00:43:59.828] Speaker 3
+Uh, they collaborate with Anthropic and OpenAI and other companies on, uh, what a good skill should-- what a good skill should ideally look like. In the end, it helps everyone. Uh, users get a clear idea of wh-- what, well, what to look at in order to write a good skill. Uh, for those who-- I mean the labs-- everything gets standardized for them, and it is easier for them to develop, uh, safe, reliable harnesses that will pull in skills. And in the end, life gets better for everyone. So yes, basically, follow, follow the guides. Uh, that is probably the top list of things. [chuckles]
+
+[00:43:59.888 - 00:44:09.228] Speaker 2
+Okay. And then the next question right away. Well, of course, like for any AI user, there is a great temptation to simply ask the model to write a skill-
+
+[00:44:09.358 - 00:44:09.358] Speaker 3
+Mm-hmm.
+
+[00:44:09.358 - 00:44:15.928] Speaker 2
+...for you. Especially since there is surely a skill that takes into account, right, all those signs, all the criteria you mentioned. But then right away there is this kind of-
+
+[00:44:16.418 - 00:44:16.418] Speaker 3
+For sure.
+
+[00:44:16.418 - 00:44:27.668] Speaker 2
+...thought in your head: but we're saying that, ideally, a skill should somehow make the model smarter. But how can a model, like, make itself smarter? I mean, conditionally speaking? It seems like the author-
+
+[00:44:27.808 - 00:44:27.838] Speaker 3
+Yes.
+
+[00:44:27.838 - 00:44:30.448] Speaker 2
+...can't write themselves a smarter character.
+
+[00:44:31.368 - 00:44:51.208] Speaker 3
+If a skill is generated purely on the basis of a user opening an, uh, agent and writing to it, ‘I want you to write me a SKILL.md that will, uh, describe how to use, say, some library.’ Basically, uh, something that provides no additional context, and the model simply extracts it from its weights, from what it knows-
+
+[00:44:51.648 - 00:44:51.658] Speaker 2
+From its weights, mm-hmm.
+
+[00:44:51.658 - 00:45:50.908] Speaker 3
+...then it will-- basically produce a useless skill. That's a fact. Uh, there are a lot of papers on this topic. Uh, there is an article about the SkillsBench benchmark, which focuses specifically on, you know, testing skills. And they tested, [clicks tongue] uh, skills written based simply on a prompt about what needed to be done in a task, right? That is, the model saw only a short-- a short topic of what the task might be about, uh, and figured out what specifically might be useful to include in the skill. Then they ran the benchmark when the agent had access to that skill, and saw that it did not improve performance at all compared with the baseline, when the model has no skill. But as soon as some, uh, so-called conditioning appears, that is, something-- something on which it can, mm, uh, contextualize itself, either in the form of some user knowledge.
+
+[00:45:51.168 - 00:46:40.208] Speaker 3
+That is, the user says that I want a skill that converts the API of this documentation and clearly says, uh, which version to look at, and specifies, for example, that the use cases of this API, this one, and this one matter to me. That is, what exactly matters to the user. Or if there is access to the trajectory itself, training skills based on, uh, user-agent trajectories is also a really good case, because, uh, when a user wants to solve some task and doesn't yet have a skill, they will most likely first explicitly carry out this pipeline, what they want to encode, with the agent. Uh, there will emerge a clear rollout in which there were steps that, uh, satisfied the user, and so we moved on. If the user did not like something, they say, ‘Redo it.’
+
+[00:46:40.628 - 00:47:40.468] Speaker 3
+So, this whole, uh, story of the user's communication and their feedback, mm, and what the agent did, is a very good, uh, basis, a kind of context, for generating a skill from it. That is, as soon as we generate it not out of thin air, but based on having user experience, having, uh, metrics and rollouts confirming how, how, how a task was solved in the past, it immediately becomes a kind of reason to make it into a skill. And then, even if it is generated automatically, it will most likely, uh, be good. And there are also, uh, well, a ton of recent papers on this, focused on building a pipeline where an agent solves a task and gets feedback from an evaluator, such as unit tests failing or, you know, the program not compiling.
+
+[00:47:40.508 - 00:47:52.128] Speaker 3
+That is, the agent sees, uh, what went wrong and, based on that, adds to an existing skill or creates a new one. And then, when it solves that task again, it no longer runs into the same problems.
+
+[00:47:53.128 - 00:48:00.648] Speaker 2
+Mm-hmm. You just said there are papers on this topic. I wanted to clarify exactly this: is it possible to automatically turn an agent trajectory into a skill?
+
+[00:48:01.828 - 00:48:54.048] Speaker 3
+Uh, yes, actually, mm, there is no one specific, canonical algorithm, right, but there are many papers that explore the idea on static benchmarks: let's take, uh, some domain-specific benchmark, for example tasks, uh, related to finance: how to parse Excel, how to make Excel spreadsheets. And then we will have, conditionally speaking, a training part and a test part. On this training part of the benchmark, when the agent solves a task, it will have access to all the information about how it solved it. For example, that it solv-- uh, that this particular test did not pass, or that this particular action was, uh, performed incorrectly. That is, it will have information about whether it solved the task correctly or not.
+
+[00:48:54.168 - 00:49:48.808] Speaker 3
+And when an agent solves such tasks autonomously, it produces these trajectories, right, so you end up with a huge collection of, uh, trajectories where-- how-- where it solved something correctly in some places and incorrectly in others. Then you can run, on these data, let's say, an aggregator agent that will, uh, compile these lessons into some, uh, useful knowledge, a so-called skill. Then, uh, after the training, the conditional training, is finished, we run it on this held-out part, on validation, uh, where the skill will be loaded, loaded into the agent's context, and we will look at, uh, measure whether, for example, the result has improved compared with the baseline. The SkillsOpt work from Microsoft, the Wiki-skills work from Google, are specifically about this. There is another paper, Trajectory to Skills, by Cohen.
+
+[00:49:49.108 - 00:50:48.268] Speaker 3
+They all test in this, this, this paradigm I tried to describe, hopefully reasonably clearly. Uh, they all test, uh, skills, this kind of skill auto-generation, in this way. In short, the agent needs feedback on whether it solved the task correctly or not. And once that component appears, verifiability, once you have it, uh, what and how to put into the skill becomes more or less clear. There is, of course, a very important caveat: the agent can stupidly, uh, let's say, put shortcuts into it, right? That is, put, uh, put the answer, uh, to the task it is asked into that skill, right? Then it turns out not to be reusable knowledge, not useful, uh, information about how to work with, say, Excel spreadsheets or how to approach solving math problems, but something highly specific and not generalizable.
+
+[00:50:48.298 - 00:51:16.568] Speaker 3
+And that is called reward hacking, right? Because we ask the model to optimize, uh, a signal, uh, and at some point it may converge on: ‘Well, then I won't generate anything useful; I will directly just, uh, wr-- write the answers into the skill.’ But that is precisely why this held-out dataset exists, right? Machine learning one-oh-one: uh, we have a held-out dataset on which we can measure whether something actually improved or not.
+
+[00:51:17.268 - 00:51:30.328] Speaker 2
+Mm-hmm. And speaking of, uh, non-programmers, if I'm not mistaken, I read that Claude has the ability to, uh, sort of record the screen and turn it into a skill. Or something like that.
+
+[00:51:30.378 - 00:51:30.378] Speaker 3
+Yes.
+
+[00:51:30.388 - 00:51:33.968] Speaker 2
+As an alternative to writing one or asking the model to generate one.
+
+[00:51:34.648 - 00:52:34.428] Speaker 3
+Yes, actually, I think they added that in Claude Cowork, uh, specifically Claude for non-programmers, where there is a UI, uh, and you simply chat and can ask it to solve any task, uh, just as in Claude Code. Under the hood, it has access to those tools, just as Claude Code does. It can invoke Bash, it can read files, and, you know, you can grant permission to read directories. Yes, and, uh, in the very first release [clicks tongue] there were two options. The first option was to add a skill. That is, you could bring in your own skill. And the second option was, uh, to convert a trajectory, uh, into a skill. And now, well, I think it was already a month ago or more, they really added a new mode as well, uh, to record the screen and, uh, add that as another source of information. Why did that happen? Because Cowork use cases are prec-- precisely more visual.
+
+[00:52:34.468 - 00:53:14.968] Speaker 3
+People edit video with Cowork, make, uh, presentations. And naturally, in addition to, mm, the signal available at the level of reading binaries, right, and at the le-- level of reading files, some additional visual information is needed, uh, that can be processed. And that, that helps take these, uh, visual elements into account. For example, how to make headers specifically in your, uh, pre-- uh, company presentation. It is something it can learn only-- learn well only by looking at, you know, the image, the recording of that screen that was made.
+
+[00:53:16.208 - 00:53:35.908] Speaker 2
+Cool! I haven't tried it, but it sounds cool, futuristic. Uh, but if we talk, uh, after all, about this conservative [coughs] manual writing of skills, does structure or word choice matter at all, or is the model smart and will actually figure everything out? And the facts are what matter most.
+
+[00:53:37.448 - 00:54:18.268] Speaker 1
+Yes, I would add here, Katya, that one of the best-known skill writers in the developer community is Matt Pocock, who has, I don't know, something like a hundred million stars on GitHub. And one of the things he advocates is so-called leading words. You can make your skill, like, five times shorter by not describing some concept but using one apt word that the model knows well. Words such as, say, tr-- tracing bullet, uh, or vertical slice. Uh, things, conditionally speaking, that are already described very well in software-engineering books, so the model knows them.
+
+[00:54:19.108 - 00:55:18.904] Speaker 3
+Mm-hmm. Uh, but the question is: does the user know them, right? So that they can prompt the model to write a skill, uh, in this, this way. Because, uh, [clears throat] I think that the skill auto-generators, that is, a skill for writing skills, that I have seen do not use any special terminology. They still follow basic principles and those guidelines saying that, uh, a skill's description should be, uh, unique, short, and specific, describing as clearly as possible how you-- how you as a user want, uh, to use that skill. And that is generally about the question of how to find this unique, strong, right, silver-bullet skill description. Uh, in my experience, writing a skill from scratch in 2026 is [laughs] already a rather thankless, unrewarding thing.
+
+[00:55:19.324 - 00:56:09.864] Speaker 3
+So, in any case it is worth involving an agent, uh, with, for example, a skill assistant that will al-- allow it to conv-- convert, you know, your trajectory, your, your knowledge, uh, taking these guidelines into account, into some skill representation. And then, uh, th-- this brings us back to the question of how that skill will ultimately be used. Will it be used forcibly? Uh, Do we expect it to pull itself in even when, well, the user does not explicitly specify it, uh, or will it always be available? And the question is whether the model is smart, smart enough to find it, uh, by searching, uh, among the available skills. That is probably what it comes back to, I think.
+
+[00:56:10.184 - 00:56:44.474] Speaker 3
+And if we optimize for that particular scenario, uh, where the skill should, you know, be pulled in implicitly, uh, as in user stories, then of course you need to care a lot, a looot about having a good description. But I think trying to assess its quality in one iteration without evals is a road to nowhere. Uh, and that brings us back to the point that evals are needed. This process of improving skills and finding the ideal description is iterative.
+
+[00:56:46.144 - 00:57:22.504] Speaker 1
+Uh, there is another related, mm, opinion related to whether to let a model write skills. It goes something like this. Uh, new models are good at writing skills for models from the previous generation, but not for themselves, because they have seen skills that were written specifically for the previous generation. So the skills they write are not very well optimized for themselves. Well, the simplest example is that they will give too many instructions-- in short, too many instructions, when smarter models could properly be given fewer instructions. What do you think about that take? True or false?
+
+[00:57:23.584 - 00:57:47.884] Speaker 3
+Uh, yes. Uh, first of all, I think that between model generations, uh, there is often a jump in how they, uh, how they express themselves, so to speak. For example, uh, OpenAI models become more and more, uh, token-efficient. They become very specific, and you can plainly notice how, how, how few tokens they, uh, try to generate.
+
+[00:58:26.464 - 00:59:08.944] Speaker 3
+Uh, [clicks tongue] first, with every, you know, big jump, with every new model version, as a rule they simply change the style of, uh, what they talk about, how they will express their thoughts. And as a rule they become shorter. And I think that, uh, first and foremost, it is worth looking at that aspect: that the writing style, the style of, uh, you know, presenting a thought, changes in models with every major version. Uh, I do not have specific, you know, data that, uh, current-generation models write skills well for the old generation but badly for their own.
+
+[00:59:09.444 - 01:00:00.444] Speaker 3
+Uh, I haven't seen papers on exactly this topic. I know that, um, there are studies showing that, generally speaking, knowledge transfer works really well. For example, if a model from one family wrote some skill, and we know it's useful because we tried using it on a benchmark, then overall, if another model on the same class of problems doesn't solve the task well without the skill, its quality will improve too when it is given that skill. And that's, um, [clicks tongue] I think, precisely the Wiki Skills paper from Google. They conduct that study there: skills generated by one model generalize well to Qwen, generalize well to Anthropic's models, and are generally useful.
+
+[01:00:00.504 - 01:00:18.164] Speaker 3
+So, um, I think that, like, on average, if a skill is useful, it will be useful on other models too. Except for the case where we're talking about a frontier model that can generally, for example, handle the task without a skill.
+
+[01:00:18.884 - 01:00:42.564] Speaker 2
+Mm-hmm. Maybe we can immediately go a little deeper here. Um, you said—and overall, you partly answered this already—you said the benefit transfers between models from different vendors. But, um, if we want to adapt it, basically, do we need to adapt a skill if we want to get the maximum benefit out of it? I mean for a particular model.
+
+[01:00:42.664 - 01:01:33.416] Speaker 3
+Yes. Um, I think that, yes, that's something you need to do. I saw it myself when I worked at a startup: some models had exactly this issue—why did I keep mentioning nested structure so many times? Some models prefer not to read the contents of a skill beyond skill.md. And you could see how much quality degraded across different models simply because some models prefer not to read all the way through. You can see this effect without evals, without comparing models, only with quite a lot of difficulty. And it's pretty hard to determine upfront whether you'll land in a situation where the agent doesn't use the skill as intended, doesn't read something, um, it's quite hard.
+
+[01:01:40.416 - 01:01:41.206] Speaker 2
+Yegor [laughs].
+
+[01:01:41.236 - 01:01:43.216] Speaker 1
+So, have you finished your part?
+
+[01:01:43.516 - 01:01:43.625] Speaker 2
+I've finished.
+
+[01:01:43.625 - 01:01:50.376] Speaker 1
+I see. Let's move on to mine. Uh... Let me think about how to approach it, then.
+
+[01:01:54.036 - 01:02:14.976] Speaker 1
+Mm-hmm. Okay. Uh, imagine you want to install some skill for yourself out of, I don't know, all those hundreds of thousands to a million skills that are currently available in open source. And before you install it, you probably preview it somehow to understand—
+
+[01:02:15.276 - 01:02:15.286] Speaker 3
+Mm-hmm
+
+[01:02:15.296 - 01:02:32.836] Speaker 1
+...whether it's even worth installing at all. What red flags should you look for so you can immediately see that this skill, well, may not be as useful as it seems, and might cause harm instead of helping? You aren't going to write an eval for every single thing.
+
+[01:02:32.906 - 01:02:32.906] Speaker 3
+Mm-hmm.
+
+[01:02:32.916 - 01:02:36.836] Speaker 1
+So maybe there are some simpler heuristics—things you can look at.
+
+[01:02:37.856 - 01:03:30.286] Speaker 3
+Yes. Um, probably if a user seriously thinks about which skill to install, they'll go look at those skills in a registry, right? They're unlikely to just ask a search engine or ChatGPT which skill would fit here. More likely, one way or another, the search will be around a registry's search system for existing skills. And in fact, the authors of that registry already provide a lot of useful metadata about skills. They generally show all kinds of statistics: how many downloads a skill has, how much it gets edited—because, as a rule, they're all on GitHub anyway. So, how many edits, how many modifications a skill has, how well maintained and rewritten it is.
+
+[01:03:30.756 - 01:04:24.776] Speaker 3
+That's the kind of metadata I would 100% look at as a user if I were, say, picking up a skill for some library I want to add to my project. Take popular Supabase, for example. If you go into a skills registry, lots of people have published custom skills for Supabase, and everyone wants to encode something particular of their own. And I probably wouldn't go for those custom things first, because I'd probably have some default use case in mind for how Supabase works out of the box. So I would try to find an official skill from the company that, um, supplies skills for that product.
+
+[01:04:24.856 - 01:05:23.856] Speaker 3
+And quite often, all such APIs and frameworks have their own separate repositories, well, repository spaces specifically for skills. For example, if you take Skills as H and go to the verified skills tab, you can see that official skills from 500 or 600 companies are actually supported and officially tracked from those vendors. And if I'm looking for something like that, it will almost certainly fall into the category of a known vendor. I'll see what skills are available. If the skill I need isn't there, only then will I go explore open source and see what people are doing there. And once I get to that point—okay, I haven't found any skills from the official vendor—then I focus on some open-source skill.
+
+[01:05:23.916 - 01:06:20.696] Speaker 3
+I look at who committed it, how popular they are, what traction they have. But I would also look at the automated metrics that are generally available in any popular registry and that try to assess a skill's usefulness. Usually, all those automated metrics are measured along the following dimensions. First is the quality of the description: whether it meets the standards. Second is the quality of skill.md and the overall skill structure, also assessed against standards. And third is the skill's security. Yes, those three things are generally provided out of the box by all popular registries now. And if any of them is highlighted red or yellow, that's at least a reason to consider that something might be wrong with the skill. Well, let's say it's passed that filter too.
+
+[01:06:20.896 - 01:07:00.816] Speaker 3
+I'm already at the final stage of narrowing down my search. I would 100% run the agent myself with my prompt to check whether my task—or what I want to do with this library or documentation—can really be solved with this skill. And if not, then I'll probably be in a situation where I need my own skill. But of course, now that hundreds of thousands of skills are available, before writing my own, I would try to make life easier for myself. Only as a last step would I try to generate my own.
+
+[01:07:03.496 - 01:07:43.340] Speaker 1
+Okay. Uh, let's imagine that, I don't know, my team lead has given me the task of writing a skill for code review that will check some set of parameters important to our team. I don't know, compliance with certain architectural standards, avoiding certain language constructs, things like that. So, basically, I have a skill that evaluates a code diff to see whether it's good or bad and gives some comments. How do I assess the quality and usefulness of this skill at all, and then keep iterating on it? What's the actual approach to evaluating it?
+
+[01:07:44.440 - 01:08:38.620] Speaker 3
+Yes, um, this is a great place to bring in something—I wrote on my blog about how I once worked not on a skill, but specifically on a pipeline for doing agentic code review, and really built out what was needed for it. That included testing other existing solutions. In my view, the first thing to do in this situation is not write your own skill, but try an off-the-shelf solution. Fortunately, they all have decent trials. And these solutions can also be customized. At the very least, that will give the team an initial useful signal about which direction to move in, and whether this code review is really trying to improve anything. That's generally about the mental model.
+
+[01:08:38.940 - 01:09:33.540] Speaker 3
+Naturally, before writing a skill or plugging in any off-the-shelf solutions, you need to understand which metrics you'll use to assess the success of an AI code-review agent, right? For example, here's how I did it: we collected and used historical PRs that had already been accepted, where the authors of those PRs had received some comments. That was the sample on which I calibrated or ran my off-the-shelf solutions. The question was whether this auto-review found the same errors or problems that the people who had actually reviewed the PRs had flagged.
+
+[01:09:33.940 - 01:10:27.640] Speaker 3
+So it was based on historical PRs where people had still looked at the review with their own eyes and, before clicking merge, there was some confidence that someone had reviewed it. It was a human-curated dataset where there was some hope that it was good. Naturally, it was divided into different categories. The comments were of different types: some were architectural comments, some were about the style guide, some were about efficiency. You need some taxonomy—what we care about, what we want to track in code review. And with a dataset like that, where we have some labels, you can run these solutions, your own skill, some off-the-shelf solutions, or even your own review pipeline.
+
+[01:10:28.220 - 01:11:00.020] Speaker 3
+And naturally, there will probably be some growth in the metrics. We'll be able to say that we're covering certain classes of tasks. For example, the model—the auto-review—assesses code efficiency well or assesses, [clicks tongue] say, code nesting well. It's a paradox: models write code poorly, yet they can be good at spotting that code is bad. [laughs]
+
+[01:11:00.620 - 01:11:01.520] Speaker 1
+You do that, and so do I.
+
+[01:11:01.680 - 01:11:04.940] Speaker 3
+All of us. Yes, yes, yes. I was about to say that too. [laughs]
+
+[01:11:05.020 - 01:11:06.060] Speaker 1
+We're all that paradox.
+
+[01:11:07.000 - 01:11:58.660] Speaker 3
+Yes, yes, yes, yes, yes. I mean, um, a model still has a good ability to assess and criticize something, but it can't properly generate that thing itself. The question is how well this aligns: how much what it finds matches what users were flagging. And after we have, so to speak, this offline eval—an eval we do to measure whether our system is sound in the first place—and once we're satisfied with its state, we can release it into a live experiment, connecting this auto-reviewer to some people in the company so the auto-reviewers tag those people and those unhappy people can look at what our agent has found.
+
+[01:11:59.100 - 01:12:47.420] Speaker 3
+Typically, um, from my experience with a live experiment: offline, I had measured on a benchmark that I had managed to tune my custom review pipeline to 80% on certain metrics we looked at in historical PRs. At some point I was happy with the good numbers. I went to roll it out in a live experiment, and it turned out that people very quickly stopped [chuckles] looking at the agent's comments because, from their perspective, those comments were empty. They weren't the things you need to flag in a PR as critical, as something that blocks a merge. And there were still a great many false positives.
+
+[01:12:48.220 - 01:13:37.660] Speaker 3
+And again, it's probably important to add the point about the mindset we operate in: a mindset where a person is still involved in the review process, or not. Because if a system can find problems with good recall but also flags lots of false positives that don't harm the system, then for a fully autonomous, agentic system, that's not a problem, right? Because as long as we have good coverage, even if we send an agent to revise something, it will come back and fix everything and solve the problem. But for a human, it isn't like that; it isn't fair. It will kind of trigger them.
+
+[01:13:37.780 - 01:14:08.640] Speaker 1
+[inhales noisily] This is probably not the topic of the episode, but I'll still throw it out there: I think it's a problem for fully autonomous agents too, because, I don't know, a false positive could be a reviewer proposing some unhandled edge case that really doesn't need handling. The implementer will go and handle it, and as a result we get a more complicated codebase that's harder to maintain and extend. That's my main problem with automatically telling your agent something like, 'go and fix all comments from agentic review.' It just doesn't work like that.
+
+[01:14:09.320 - 01:14:56.500] Speaker 3
+Yeah [laughs]. Got it. Yes, but again, it depends on how autonomous these factories are that produce code and review it. People have different opinions here. I can say that if we're making an AI reviewer that helps a human, people very quickly get overloaded with these AI-review comments because they're often sloppy and unnecessary. Why does that happen? Because the person is so deeply immersed in and knows the system that they really see that the edge case the agent flagged isn't needed. Or because—well no, that's probably the main reason. [laughs] After all, when we review code, we assume we know the system very well.
+
+[01:14:57.520 - 01:15:23.320] Speaker 1
+Mm-hmm. [inhales noisily] Listen, the general idea is roughly clear: we collect a golden dataset, write a skill, constantly run it against that dataset, and check whether it got better or worse. Is there some tooling that makes this easier? Or do you have to write an eval harness from scratch yourself for every such skill?
+
+[01:15:24.360 - 01:16:16.160] Speaker 3
+Mm-hmm. Uh, yes, great question. I wanted to begin with the thought that an eval doesn't necessarily have to be of the type where we collect some golden cases, try to gather ground-truth answers, and then run that benchmark in a static mode and deterministically assess whether things got better or worse. I think that in practice, plain telemetry often works really well. That is, we watch what happens over time in the logs, because the system evolves too, right, and we will probably modify the skills somehow, and then look at what happens over time. For that, you need annotations of those trajectories.
+
+[01:16:16.500 - 01:17:13.860] Speaker 3
+You need a very good, powerful pipeline that identifies some, [clicks tongue] categories, some taxonomy, patterns that we track. What's important to us? User frustration is important. We want the user to be less frustrated. It's important to minimize the number of non-zero exit codes, right? Cases where some tool didn't work. In other words, something that signals that something went wrong during the session. And if you monitor that over time while also improving the skill, you can achieve a pattern where, for example, the number of errors or problems associated with that skill decreases over time. Of course, you have to track that use of the skill doesn't fall to zero [laughs] in that situation, right? But you can monitor what happens to the skill live by annotating its trajectory.
+
+[01:17:13.960 - 01:18:11.820] Speaker 3
+And coming back to the question of whether platforms or systems that do this in principle [clicks tongue] exist, the answer is yes, they do. At the startup, for example, we tried to build and sell exactly such a thing. At the level of this boxed product, you connect your codebase, provide Docker containers, and we collect SWE-bench-style issues that the agent then runs through. We do a rollout and see whether it solved them or not. We check whether it's true that we can fix the context that exists in that ecosystem—for example, a skill, a rule, or AgentMD. It was a more general system, not tied only to skills. And we checked whether, after fixing one of those items and rerunning the eval, everything would now turn green. That's what we did.
+
+[01:18:12.360 - 01:19:04.640] Speaker 3
+There are lots of sensitive points here, tied to the fact that not everyone wants to share their codebase or their internal dependency registry, because that introduces many sensitive parts. That's one point. A lot of companies aren't ready to take such risks. The second point is that, with the era of vibe coding, it has become fairly quick to build such systems yourself in principle. Relatively speaking, because I can picture what I need. I won't write it myself, but I'll set an agent on it that will build such an eval system for me. And if someone is doing this inside a large business, inside a large corporation, they probably have more domain knowledge about how to do it well than they would get by buying an off-the-shelf solution.
+
+[01:19:05.280 - 01:20:00.584] Speaker 3
+Third, there are many frameworks in open source that, one way or another, try to [clicks tongue] address this problem, specifically for skills. Microsoft has frameworks too. There's Skills Opt, for example. It's a paper, a framework, and more broadly an initiative that tries to automatically create replayable tasks based on logs and repository state, for which you can write different kinds of graders either manually or automatically. And then [clicks tongue] that pipeline will generate those rollouts, and presumably some metrics will improve. There's one very big disclaimer: running agent evals is extremely expensive. It's downright insanely expensive, especially when frontier models are involved.
+
+[01:20:00.624 - 01:20:51.364] Speaker 3
+To run Sol and compare it with, I don't know, Kimi or DeepSeek, you can spend tens of thousands of dollars building large, statistically significant benchmarks, because you can never do anything meaningful with just a couple of samples. And if your company has thousands of employees, that becomes a very large operational burden, because any eval, especially nowadays, only makes sense if it's continual—that is, if it's constantly updated and maintained. The era when you have a static set of tasks that you don't have to change is gone. After a couple of minor model iterations, that benchmark will probably very quickly become saturated and completely uninformative.
+
+[01:20:51.684 - 01:21:15.194] Speaker 3
+So this is also a chicken-and-egg problem: an eval is this nice, cool concept that everyone seems to understand is necessary, and everyone tries to make one, but when they actually implement it, first, it's hard to measure things well, and they find that they aren't seeing any improvements. And on top of that, an enormous bill starts taking shape, besides the fact that your—
+
+[01:21:15.194 - 01:21:17.204] Speaker 2
+And third, the planet is warming. Mm-hmm.
+
+[01:21:17.904 - 01:21:30.204] Speaker 3
+[laughs] Well, the planet is warming, yes, that’s a— that’s a truly global problem. We really should think about it, I think. But yes, first and foremost, the bill is still shaping up to be enormous.
+
+[01:21:31.664 - 01:21:54.864] Speaker 1
+So it turns out that the most sensible, really the most realistic approach for most companies that are building around skills is to invest less in evals and more in qualitative assessment—a vibe check, but one collected not only from the skill’s author, but also from the people wh-who use it. Roughly what you were saying: look at code reviews, whether people complain about the comments or not. If they do complain, tune things gradually and make sure those complaints—
+
+[01:21:55.004 - 01:21:55.014] Speaker 3
+Yeah, yeah.
+
+[01:21:55.014 - 01:21:56.124] Speaker 1
+…go down rather than increase.
+
+[01:21:57.004 - 01:22:43.563] Speaker 3
+Well, that’s exactly about monitoring the system based on logs. I mean, investing in doing these kinds of online evals and watching how behavior changes ov-over time. Because sometimes a situation can happen where a problem that kept coming up and up with model updates, when moving to a new model, goes away automatically because the model gets smarter. And simply by, well, monitoring and seeing th-that state, that trend, you kind of get a solution to your problem without doing anything. It goes away over time. So, yes, it’s probably more important to invest in that than in benchmarks. When I worked at a startup, I held the exact opposite view.
+
+[01:22:43.684 - 01:23:32.364] Speaker 3
+I thought it was a great idea for every company to have its own SWE-style benchmark and maintain it in some form, given that the ecosystem has now become so friendly that making such a benchmark is relatively not that hard. There’s Harbor, there’s Terminal Bench, there’s this set of open-source frameworks that greatly simplify the infrastructure side. Now all the difficulty lies in the expert knowledge and in being able to collect that data well and with quality. For that, you need a very good data scientist who will put together a clean dataset and make solid annotations. And that isn’t always easy.
+
+[01:23:34.124 - 01:24:07.994] Speaker 2
+A funny thought came to mind when you said to just look at this kind of qualitative feedback—from that book about co— cognitive biases. Of course, I’ve forgotten all the names of those cognitive biases, but I remember the gist: one was about how juries, it later turned out, delivered guilty verdicts more often before lunch or something, because the jurors [laugh] were hungry. And then I pictured hungry reviewers too, and some later study, um, on the effectiveness of these kinds of evals [laughs]—
+
+[01:24:08.064 - 01:24:08.214] Speaker 3
+Yeah [laughs]
+
+[01:24:08.214 - 01:24:35.204] Speaker 2
+…when the reviewers were hungry. Okay, jokes aside. I have to admit I’m a complete skills noob in the sense that I only have my own custom-written skills, which I explicitly invoke myself, but I was pleasantly surprised when the model invoked them implicitly too. Anyway, I work with them on my content tasks, just on my own. Everything’s great. That’s why I have absolutely no idea how package management for skills works. Max, could you tell us a little about that?
+
+[01:24:36.404 - 01:24:42.254] Speaker 3
+Uh, yes—what do we sp-specifically mean by package management? Like, how to distribute them, or—
+
+[01:24:42.284 - 01:24:48.924] Speaker 2
+Yes, yes. Distribute and version them. All of it. Like NPM for skills.
+
+[01:24:50.084 - 01:25:45.712] Speaker 3
+Yes. Back when skills were just emerging, everyone was excited about the idea that we wo-would make a registry. It was a great niche for startups to occupy. We were also fired up about that idea at the Tesl startup, and ours, incidentally, still exists. Essentially, make a separate GitHub, but specifically for skills, with all the specifications for the particular nuances of skills. Because we started from the assumption that the agent context differs from source—well, from classic code in that these checks arise: whether a skill is effective, some evals, some monitoring. Right? So it seemed like sufficient—well, like fertile ground for tracking that separately, rather than simply storing it somewhere on GitHub.
+
+[01:25:46.372 - 01:26:45.192] Speaker 3
+But my, probably, [clicks tongue] view of it in the end is that the thing Vercel managed to build that is interesting, genuinely useful, and widely talked about is their Skills as H, which in practice is a wrapper around—basically, around GitHub. That is, all skills are versioned classically one way or another, in Git, and stored on GitHub. And Skills as H is simply a kind of mirror that lets you pull in those skills, sometimes proxy them somewhere, and store them on its side too, calculating various statistics on them so that, as a Skills as H user, you can get all that analytics faster. But ultimately, all versioning really happens classically, just as it does in code.
+
+[01:26:45.512 - 01:27:40.132] Speaker 3
+That is, all updates to markdown files appear on GitHub. All these package managers do, at best, is show how an eval metric changes depending on the version of a skill. And that is probably the only thing that [clicks tongue] works. All the other complex layers built on top of the idea that a package manager will automatically let you initialize a project compatible with any agent, or provide functionality to version things somewhere in the cloud—those exist. I don’t think they produce any radical productivity explosion or improvement over simply versioning them like source code in GitHub. That’s it.
+
+[01:27:41.472 - 01:28:34.292] Speaker 3
+[laughs] My personal experience with versioning skills and with building this package manager from scratch was that—well, in the end it’s not really all that necessary, because ultimately you can always sic an agent on it. It’s a very basic routine task, and it will figure out how to set up a project with a skills structure for a particular agent. Unless you’re doing something very sophisticated, you don’t need smart package managers for it. That’s one point. And my second view is that, again, only a large vendor that people and the community trust has managed to make this work. If some small company, some startup, tries to do it, people often simply wo-won’t use it.
+
+[01:28:35.452 - 01:28:42.922] Speaker 3
+[breathes in noisily] So, to sum up, I actually have nothing interesting to say about package managers. [laughs]
+
+[01:28:43.072 - 01:28:48.692] Speaker 2
+That’s an excellent answer too. Just version them together with the code. The end. And there’s your registry.
+
+[01:28:49.392 - 01:28:52.492] Speaker 3
+Well, yeah. [laugh]
+
+[01:28:52.872 - 01:29:47.882] Speaker 1
+Okay, let’s talk a little about how an engineering team should approach developing and maintaining its own set of skills. I’d probably start with creating new skills—a topic we’ve already touched on a little. How would you advise structuring the development and review process for skills so that they aren’t just, I don’t know, random slop Claude generated for you, but meet some reasonable standards? What should people think about? Because we more or less understand how to write code. At the very least, you have lots of feedback loops telling you something went wrong: did the code compile or not, did the tests pass or not; a JavaScript developer, I don’t know, gets an eye for whether code is bad when they look at it in code review. But with a skill, what do you look at?
+
+[01:29:49.692 - 01:30:28.772] Speaker 3
+Yeah. I’ll probably start with how a team should generally approach this, so to speak, creation of skills. Again, if a team is only starting to create skills, there’s nothing wrong at all with using ordinary version control systems, VCS, and letting everyone create their own skills however they want to help automate their work. I think that at the first stage, whenever a person—an engineer—is just getting acquainted with the technology, this helps build an intuition for how it all works in general.
+
+[01:30:28.992 - 01:31:27.592] Speaker 3
+And the stage of, so to speak, merging and trying to aggregate everything comes naturally later, once the team matures to the point where they understand: ‘Okay, we feel so good and comfortable working with agents that now we can think about how to arrive at a unified skills registry,’ for example. [clicks tongue] And from what I see, from what was reflected, for instance, in this Uber report, there is a collection, so to speak, of golden skills which—again, how to arrive at it is also an open question—but most likely there needs to be some agent-enablement team that will deliberately work on introducing all skill practices and on creating the first, first batch of reusable skills, again based on some data confirming that those skills are needed. What does that require?
+
+[01:31:27.652 - 01:32:27.436] Speaker 3
+It requires analysis and monitoring of trajectories. So this first set of golden skills emerges, describing the most important, most critical parts of the pipeline. And this—this set of skills expands over time only very smoothly and gradually, in that every new change has to be, well, a change for which a great deal of effort and evidence is provided to show that it is needed, right? How to make these changes, this monitoring—that comes back to the question of constantly labeling trajectories. You need some pipeline that, in the background, at night when nobody is working and traffic is minimal, looks at what happened in the logs, how skills were used, what recurring patterns of problems arise, [clicks tongue] and how they change over time.
+
+[01:32:27.466 - 01:33:06.336] Speaker 3
+And based on that information, you then try to propose edits to these skills. And then, so it doesn’t turn entirely into slop, I think there should be some kind of human review, or human-plus-AI-assisted review, to minimize the amount of new content in these golden skills that are used across teams, that are used within the company. That is the first layer of skills, which is maintained at the level of the whole organization. But nothing stops people from writing their own custom skills, where precisely those rules do not apply, right?
+
+[01:33:06.456 - 01:33:49.256] Speaker 3
+And if you are doing some work locally and have your ow-own specific workflow for how to write code and test it, that can simply be some private skill which also lives somewhere in the registry, just marked with a folder or placed in some particular location; it doesn’t affect the common collection in any way. And as a user, you can do whatever you want with those skills. The point is to separate the skills that matter to the whole te-team and company from skills that are highly custom and introduce some super-opinionated structures. That’s about it.
+
+[01:33:49.276 - 01:34:04.896] Speaker 2
+I’ve started fantasizing; all I can think of are non-content use cases, and I keep thinking about unique knowledge and, you know, a skill where—you write your corporate messages to colleagues, obviously—and it checks your communication against the company values [laugh]—
+
+[01:34:05.056 - 01:34:05.276] Speaker 3
+Yeah, yeah, yeah.
+
+[01:34:05.286 - 01:34:06.496] Speaker 2
+…your communication.
+
+[01:34:07.576 - 01:34:11.466] Speaker 3
+Well, that too, yeah, one skill—
+
+[01:34:11.496 - 01:34:12.316] Speaker 2
+For compliance with the values, yes.
+
+[01:34:12.576 - 01:34:42.106] Speaker 3
+…one skill for that could—because, how should I put it, every person in the same role will most likely have a different style of presentation and a different way of communicating with the team, right? A junior will probably write reports in one particular way, trying to show what experiments they did. A senior, a CEO—they will stick to a completely different kind of content, explaining the overall, overall structure of what’s going on.
+
+[01:34:42.136 - 01:34:46.326] Speaker 2
+But the company values should apply to everyone, regardless of grade [laughs]
+
+[01:34:46.376 - 01:34:59.916] Speaker 1
+Wait, wait. This doesn’t need a skill; this is precisely online monitoring of a-all trajectories. We collect everyone’s agent trajectories, look at them at night to see who follows the party line and who doesn’t. In the morning, there’s a statement in their inbox.
+
+[01:35:01.536 - 01:35:20.936] Speaker 3
+Well, yes, yes, yes. Monitoring trajectories turns out to be a s-safety issue too. [laughs] But it seems to me that if you work inside a company, you probably automatically sign off on your trajectories being reviewable within the company by teams that are trying to control quality and monitoring.
+
+[01:35:21.476 - 01:35:23.116] Speaker 1
+Uh, not control—alignment.
+
+[01:35:23.876 - 01:35:40.296] Speaker 3
+Well, [laughs] int—internal alignment, yes. Yes, that exists too. What else can we talk about and say about skills in a team? Hmm, I don’t even know. Like…
+
+[01:35:41.016 - 01:35:50.556] Speaker 1
+Yeah, fi—uh, fine. Listen, I think you gave us a direction to dig into. So I suggest we move on to Katya’s next question, which seems to be our last one.
+
+[01:35:50.896 - 01:35:51.136] Speaker 2
+The last one.
+
+[01:35:51.176 - 01:35:51.456] Speaker 3
+Mm-hmm.
+
+[01:35:52.756 - 01:35:58.625] Speaker 2
+And finally, of course, we always want to talk about the future. So, look, we’ve already had—
+
+[01:35:58.636 - 01:35:59.856] Speaker 1
+Hold on, wait a second.
+
+[01:35:59.876 - 01:36:00.036] Speaker 2
+Yes.
+
+[01:36:00.055 - 01:36:01.526] Speaker 1
+Katya, could I ask you to do that again?
+
+[01:36:01.536 - 01:36:01.636] Speaker 2
+Let’s do it.
+
+[01:36:01.696 - 01:36:05.076] Speaker 1
+But yes, so that it doesn’t hardwire it into a rigid chronology.
+
+[01:36:05.256 - 01:36:23.736] Speaker 2
+Agreed, that’s my Podlodka thing. So, what are we going to do? Anyway, look, we’ve already had rule files, we’ve had agents.md, we have MCP; the boundary there is already blurring somewhere. Now we have skills. So, uh, what’s next?
+
+[01:36:25.276 - 01:37:24.876] Speaker 3
+Yeah. Well, actually, I don’t think these things have gone anywhere yet. Rules still exist, I think. They’ve just shifted, because that was purely a Cursor initiative. Agents.md exists at the root of any repository, and MCP servers too are as relevant as ever. I think that—first, this is an open question, and many trends are now dictated even more by frontier labs. That is, the formats, the representation of memory, the approach to processing context that labs choose will ultimately determine how the ecosystem develops. [clicks tongue] And what the next step in that will be is a very open question. It’s not a given that skills in their initial form will make it through.
+
+[01:37:25.276 - 01:38:16.396] Speaker 3
+It’s very hard to understand what the future format of skill.md will be. Maybe it will be something more graph-like; maybe something more spec-like, right? In other words, specifications may have their own reincarnation, despite the fact that many startups have gone bust on that idea. But it’s very, very hard to say what the format itself will look like. Again, it is strongly tied to what the representation of that memory will be and to how the next models will learn. Right now they learn according to the principle of user prompt, then reasoning, then model tool-call output. And as long as that paradigm remains, skills contribute to this hierarchy by simply being a re-reading of a file.
+
+[01:38:16.576 - 01:39:10.676] Speaker 3
+That is, an agent simply reads a file from disk, and in this way the model loads new tokens into its context during inference and learns that, okay, it needs to do something this way. But conceptually, that can change. And I think this falls into a very interesting topic called continual learning—algorithms that address how to add this component of expertise to the huge intelligence that comes out of the box with a model. The thing that makes a model agent useful specifically in your particular user use case. At the moment, skills act as that mediator: a convenient format that is useful and works for all models.
+
+[01:39:11.376 - 01:40:09.076] Speaker 3
+But yes, just an observation: how many tokens get inefficiently burned every time a skill is loaded into memory, right? Each new session begins, in a sense, with this kind of amnesia. It needs to realize it has an available skill and read it. It reads the same thing over and over. And clearly, some skills eventually leak into the model’s memory, into its weights, because in the course of optimization, post-training, mid-training, whatever, it remembers how to work. But some remain an inefficient huge number of tokens that it reads again and again. I like to imagine where this direction of continual learning will go next. When mo-model sizes were very small, it was possible to do so-called parameter-efficient fine-tuning.
+
+[01:40:09.256 - 01:41:04.356] Speaker 3
+And LoRA adapters were very popular there, right? In a sense, you can encode a skill in a small adapter, in a vector representation, attach it to the model during inference, and that’s it. It immediately has, it immediately knows at the level of its weights how to solve your particular task. It no longer needs to read all those tokens or think about how to apply them; it already sort of knows in advance. Now, at the scale of trillions of parameters that all models have, thinking about LoRA adapters is probably too optimistic. Plus, beyond all the engineering complexities of how it works, applying them to models in general is very difficult. But there is, for example, the soft-token approach, where [clicks tongue] new tokens are added to the model’s vocabulary.
+
+[01:41:04.556 - 01:41:58.016] Speaker 3
+And if you have the luxury of being able to fine-tune a model, then you fine-tune only those particular tokens, keeping the whole model frozen. And in that way, it too can represent this skill or collection of skills in some n number of tokens. And during inference it will all work very well. I like to think that the idea of contexts will move into parameter space—into changing something at the level of model weights. But I kind of doubt [laughs] that it will happen that way for now, because all those labs are simply racing to solve and cover more and more classes of tasks, and they do not have time to think about radically changing the model-training algorithms.
+
+[01:41:58.116 - 01:42:57.496] Speaker 3
+And most likely we will have the concept of skills for a very long time yet, in more or less the same form as they are now. Because, in a sense, skills cover all the bases: they let you encode any content; you can add images and video there. A skill can be any size. You can put any file in it, write anything in it. And even for those activation problems, you can find a way around them. In one way or another, hackily or not, for every use case you can come up with a way to maximize the benefit from that skill. So this format will most likely remain with us one way or another, at least this year, and probably next year too. That is, until labs begin thinking about how to change, first, the system for representing memory, and second, until they seriously take up continual learning.
+
+[01:42:59.136 - 01:43:02.736] Speaker 2
+And as we know, nothing is more permanent than the temporary.
+
+[01:43:03.316 - 01:43:03.856] Speaker 3
+[laughs]
+
+[01:43:04.756 - 01:43:05.376] Speaker 2
+So…
+
+[01:43:05.896 - 01:44:04.756] Speaker 3
+Well, yeah. Well, yeah. [laughs] By the way, in the context of AgentsMD not going anywhere, at one point I think Vercel also published a study where they benchmarked how an agent handles the same set of tasks if the knowledge needed to solve that task is put into skills versus put into AgentsMD. And it turned out that AgentsMD was simply more effective, precisely because it didn’t have this problem of whether the skill activated or not, triggered or didn’t trigger. And it naturally seems that AgentsMD is a good point in a repository, in a project. So why not have it? Skills are the same story. A custom description of how to do things in a company-specific way isn’t going anywhere either.
+
+[01:44:04.876 - 01:44:16.876] Speaker 3
+And the same goes for MCP. Probably the thing that will be deprecated is rules. First of all, because they were invented specifically by Cursor, and Cursor no longer exists; it now exists within—
+
+[01:44:17.416 - 01:44:17.426] Speaker 1
+Progress.
+
+[01:44:17.456 - 01:44:54.776] Speaker 3
+Yes, yes, within X. And that was their attempt to introduce something that should always activate, or activate only on certain words. But because they do not fully control the stack, it is very difficult to reinvent that memory model and adapt it so that it works for everyone. So rules are probably going away, in one sense or another, for good. Everything else lives on: AgentsMD, MCP, skills—they’re alive and will be with us for some time yet.
+
+[01:44:56.716 - 01:44:57.036] Speaker 1
+Mm-hmm.
+
+[01:44:57.996 - 01:44:58.176] Speaker 3
+There you go.
+
+[01:44:58.356 - 01:45:09.576] Speaker 1
+Okay, I thi— I think that’s all our questions. Thank you so much for coming on and answering everything. It was really great talking with you.
+
+[01:45:10.516 - 01:45:13.696] Speaker 3
+Thank you very much for inviting me. I was happy to answer. [laughs]
+
+[01:45:13.756 - 01:45:15.556] Speaker 1
+That’s it. Bye-bye.
+
+[01:45:16.256 - 01:45:16.636] Speaker 2
+Bye.
+
+[01:45:17.416 - 01:45:18.456] Speaker 3
+Phew. [laughs]
+
+[01:45:18.556 - 01:45:20.676] Speaker 1
+Okay, I’m pressing end recording.
+
+[01:45:21.386 - 01:45:21.476] Speaker 2
+Yes.
