@@ -19,8 +19,10 @@ function removedRanges(clips,sourceDuration){
 const phraseEnd=text=>/[.!?…](?:["'»”\])}]+)?$/.test(text.trim());
 function firstPhrase(words){const selected=[];for(const word of words.slice(0,12)){selected.push(word);if(selected.length>=2&&phraseEnd(word.text))break}return selected.map(word=>word.text.trim()).join(' ')}
 function lastPhrase(words){let start=Math.max(0,words.length-12);for(let index=words.length-2;index>=start;index--)if(phraseEnd(words[index].text)){start=index+1;break}return words.slice(start).map(word=>word.text.trim()).join(' ')}
-function cutReport(clips,recording){
- const cuts=removedRanges(clips,recording.duration),removed=cuts.reduce((sum,[start,end])=>sum+end-start,0),lines=[`# Монтажный лист: ${recording.title}`,'',`Источник: \`${recording.source}\`  `,`Вырезано фрагментов: ${cuts.length}  `,`Общая длительность вырезанных фрагментов: ${stamp(removed)}  `,'Все таймкоды относятся к исходной записи.',''];
+function cutReport(clips,recording,kind='main'){
+ if(kind==='reel'&&!clips.length)return '_Рилс пуст._\n';
+ const reelStart=Math.min(...clips.map(clip=>clip.start)),reelEnd=Math.max(...clips.map(clip=>clip.end));
+ const cuts=removedRanges(clips,recording.duration).filter(([start,end])=>kind!=='reel'||(start>=reelStart&&end<=reelEnd)),removed=cuts.reduce((sum,[start,end])=>sum+end-start,0),lines=kind==='reel'?[`${stamp(reelStart)} – ${stamp(reelEnd)}`,'']:[`# Монтажный лист: ${recording.title}`,'',`Источник: \`${recording.source}\`  `,`Вырезано фрагментов: ${cuts.length}  `,`Общая длительность вырезанных фрагментов: ${stamp(removed)}  `,'Все таймкоды относятся к исходной записи.',''];
  if(!cuts.length)lines.push('_В текущей версии нет вырезанных фрагментов._','');
  cuts.forEach(([start,end],index)=>{
   const words=recording.words.filter(word=>word.text.trim()&&word.start<end-EPSILON&&word.end>start+EPSILON);let first,last;
@@ -29,11 +31,11 @@ function cutReport(clips,recording){
  });return lines.join('\n');
 }
 const escapeMetadata=text=>String(text).replaceAll('\\','\\\\').replaceAll('=','\\=').replaceAll(';','\\;').replaceAll('#','\\#').replaceAll('\n',' ');
-function writeSidecars(folder,project,recording,plan){
+function writeSidecars(folder,project,recording,plan,kind='main'){
  fs.mkdirSync(folder,{recursive:true});
  fs.writeFileSync(path.join(folder,'project.json'),JSON.stringify(project,null,2),'utf8');
  fs.writeFileSync(path.join(folder,'edit-list.json'),JSON.stringify({title:recording.title,source:recording.source,timestampBasis:'original source seconds',fps:FPS,clips:plan},null,2),'utf8');
- fs.writeFileSync(path.join(folder,'cut-report.md'),cutReport(project.clips,recording),'utf8');
+ fs.writeFileSync(path.join(folder,'cut-report.md'),cutReport(project.clips,recording,kind),'utf8');
  const metadata=[';FFMETADATA1',`title=${escapeMetadata(recording.title)}`],transcript=['Edited transcript · source and edit timestamps',''],srt=[];let cue=1;
  for(const clip of plan){
   metadata.push('[CHAPTER]','TIMEBASE=1/1000',`START=${Math.round(clip.outputStart*1000)}`,`END=${Math.round(clip.outputEnd*1000)}`,`title=${escapeMetadata(clip.label)}`);
@@ -56,8 +58,8 @@ function runProcess(args,job,onProgress,expected){
   child.on('error',reject);child.on('close',code=>{job.process=null;if(job.cancelled)return reject(Error('Export cancelled.'));if(code)return reject(Error(`Video rendering failed: ${stderr.slice(-1800)}`));resolve()});
  });
 }
-async function renderEdit({source,folder,project,recording,burn=true,height=1080,job,update}){
- const plan=renderPlan(project.clips);if(!plan.length)throw Error('The edit has no clips to export.');fs.mkdirSync(folder,{recursive:true});const parts=path.join(folder,'parts');fs.mkdirSync(parts,{recursive:true});const total=plan.reduce((sum,clip)=>sum+clip.renderDuration,0);writeSidecars(folder,project,recording,plan);const concat=[];let done=0;
+async function renderEdit({source,folder,project,recording,burn=true,height=1080,job,update,kind='main'}){
+ const plan=renderPlan(project.clips);if(!plan.length)throw Error('The edit has no clips to export.');fs.mkdirSync(folder,{recursive:true});const parts=path.join(folder,'parts');fs.mkdirSync(parts,{recursive:true});const total=plan.reduce((sum,clip)=>sum+clip.renderDuration,0);writeSidecars(folder,project,recording,plan,kind);const concat=[];let done=0;
  for(let index=0;index<plan.length;index++){
   const clip=plan[index],length=clip.renderDuration,part=path.join(parts,`${String(index).padStart(5,'0')}.mkv`);update({status:'rendering',message:`Rendering clip ${index+1} of ${plan.length}`,progress:done/total*.95});
   let videoFilter=`scale=-2:${height},fps=${FPS},tpad=stop_mode=clone:stop_duration=0.1,trim=duration=${length.toFixed(9)},setpts=PTS-STARTPTS`;if(burn)videoFilter+=','+timestampFilter(clip.start);

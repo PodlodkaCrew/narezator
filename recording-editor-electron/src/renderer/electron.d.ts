@@ -1,6 +1,6 @@
 import type {Project,Recording} from './lib/editor-model';
 
-interface ElectronExportJob {id:string;status:string;progress:number;message:string;kind?:'main'|'reel';title?:string;duration?:number}
+export interface ElectronExportJob {id:string;status:string;progress:number;message:string;kind?:'main'|'reel'|'reels';title?:string;duration?:number;outputFolder?:string;completed?:number;total?:number;skipped?:number}
 interface CutroomElectronApi {
  mediaUrl:string;
  captionsUrl:string;
@@ -19,6 +19,7 @@ interface CutroomElectronApi {
  listExports:()=>Promise<{jobs:ElectronExportJob[]}>;
  getExport:(id:string)=>Promise<ElectronExportJob>;
  startExport:(payload:{project:Project;burn:boolean;height:number;title:string;kind:'main'|'reel'})=>Promise<ElectronExportJob>;
+ startReelsExport:(payload:{project:Project;burn:boolean;height:number})=>Promise<ElectronExportJob|null>;
  cancelExport:(id:string)=>Promise<{ok:boolean}>;
  saveExportFile:(id:string,name:string)=>Promise<{cancelled:boolean;filePath?:string}>;
  revealExport:(id:string)=>Promise<{ok:boolean}>;

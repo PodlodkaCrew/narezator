@@ -5,6 +5,7 @@ const {mediaResponse}=require('./media-response.cjs');
 const crypto=require('node:crypto');
 const {ProjectStore,atomicJson,validateProject}=require('./project-store.cjs');
 const {renderEdit}=require('./exporter.cjs');
+const {createReelsFolder,renderReels}=require('./reels-export.cjs');
 const {importRecording,probeVideo}=require('./recording-import.cjs');
 const {importWebProject}=require('./web-project-import.cjs');
 
@@ -60,13 +61,28 @@ function registerIpc(){
  ipcMain.handle('exports:list',()=>({jobs:[...jobs.values()].filter(job=>job.projectId===store.identity()||(!job.projectId&&store.identity()==='legacy')).map(publicJob)}));
  ipcMain.handle('exports:get',(_event,id)=>{const job=jobs.get(id);if(!job)throw Error('Export not found.');return publicJob(job)});
  ipcMain.handle('exports:start',(_event,{project,burn,height,title,kind})=>{
-  const {recording,config}=workspace(),snapshot=validateProject(structuredClone(project),recording);if(!snapshot.clips.length)throw Error('Add a clip before exporting.');if(![720,1080].includes(height))throw Error('Unsupported export size.');if([...jobs.values()].some(job=>['queued','rendering'].includes(job.status)))throw Error('An export is already running.');
+  const {recording,config}=workspace(),snapshot=validateProject(structuredClone(project),recording);if(!snapshot.clips.length)throw Error('Add a clip before exporting.');if(![720,1080].includes(height))throw Error('Unsupported export size.');if([...jobs.values()].some(job=>['queued','rendering'].includes(job.status)||job.process))throw Error('An export is already running.');
   const id=crypto.randomUUID(),folder=path.join(exportRoot(),id),job={id,projectId:store.identity(),status:'queued',progress:0,message:kind==='reel'?'Preparing reel':'Preparing export',kind,title,folder,process:null,cancelled:false};fs.mkdirSync(folder,{recursive:true});jobs.set(id,job);updateJob(job,{});
-  void renderEdit({source:config.videoPath,folder,project:snapshot,recording:{...recording,title},burn,height,job,update:fields=>updateJob(job,fields)}).catch(error=>updateJob(job,{status:job.cancelled?'cancelled':'error',message:error.message}));return publicJob(job);
+  void renderEdit({source:config.videoPath,folder,project:snapshot,recording:{...recording,title},burn,height,job,kind,update:fields=>updateJob(job,fields)}).catch(error=>updateJob(job,{status:job.cancelled?'cancelled':'error',message:error.message}));return publicJob(job);
  });
- ipcMain.handle('exports:cancel',(_event,id)=>{const job=jobs.get(id);if(!job)return {ok:false};job.cancelled=true;job.process?.kill('SIGTERM');updateJob(job,{status:'cancelled',message:'Export cancelled.'});return {ok:true}});
+ ipcMain.handle('exports:reels',async(_event,{project,burn,height})=>{
+  const {recording,config}=workspace(),projectId=store.identity(),snapshot=validateProject(structuredClone(project),recording);
+  if(!snapshot.reels.some(reel=>reel.clips.length))throw Error('There are no non-empty reels to export.');
+  if(![720,1080].includes(height))throw Error('Unsupported export size.');
+  const checkBusy=()=>{if([...jobs.values()].some(job=>['queued','rendering'].includes(job.status)||job.process))throw Error('An export is already running.')};
+  checkBusy();
+  const result=await dialog.showOpenDialog(window,{title:'Choose where to export all reels',properties:['openDirectory','createDirectory']});
+  if(result.canceled||!result.filePaths.length)return null;
+  checkBusy();
+  const id=crypto.randomUUID(),folder=path.join(exportRoot(),id),outputFolder=createReelsFolder(result.filePaths[0]);
+  const job={id,projectId,status:'queued',progress:0,message:'Preparing all reels',kind:'reels',title:recording.title,folder,outputFolder,completed:0,total:snapshot.reels.filter(reel=>reel.clips.length).length,process:null,cancelled:false};
+  fs.mkdirSync(folder,{recursive:true});jobs.set(id,job);updateJob(job,{});
+  void renderReels({source:config.videoPath,folder:outputFolder,project:snapshot,recording,burn,height,job,update:fields=>updateJob(job,fields)}).catch(error=>updateJob(job,{status:job.cancelled?'cancelled':'error',message:error.message}));
+  return publicJob(job);
+ });
+ ipcMain.handle('exports:cancel',(_event,id)=>{const job=jobs.get(id);if(!job||!['queued','rendering'].includes(job.status))return {ok:false};job.cancelled=true;job.process?.kill('SIGTERM');updateJob(job,{status:'cancelled',message:'Export cancelled.'});return {ok:true}});
  ipcMain.handle('exports:saveFile',async(_event,{id,name})=>{const job=jobs.get(id),allowed=new Set(['edited-video.mp4','project.json','edit-list.json','cut-report.md','transcript.txt','subtitles.srt']);if(!job||!allowed.has(name))throw Error('Export file not found.');const source=path.join(job.folder,name);if(!fs.existsSync(source))throw Error('Export file not found.');const result=await dialog.showSaveDialog(window,{defaultPath:name});if(result.canceled||!result.filePath)return {cancelled:true};fs.copyFileSync(source,result.filePath);return {cancelled:false,filePath:result.filePath}});
- ipcMain.handle('exports:reveal',(_event,id)=>{const job=jobs.get(id);if(!job)throw Error('Export not found.');shell.showItemInFolder(path.join(job.folder,'edited-video.mp4'));return {ok:true}});
+ ipcMain.handle('exports:reveal',async(_event,id)=>{const job=jobs.get(id);if(!job)throw Error('Export not found.');if(job.kind==='reels'){const error=await shell.openPath(job.outputFolder);if(error)throw Error(error)}else shell.showItemInFolder(path.join(job.folder,'edited-video.mp4'));return {ok:true}});
 }
 function createWindow(){
  window=new BrowserWindow({width:1500,height:980,minWidth:980,minHeight:700,backgroundColor:'#2c3b44',title:'Cutroom',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});

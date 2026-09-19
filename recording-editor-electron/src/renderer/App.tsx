@@ -1,16 +1,18 @@
 'use client';
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import {ArrowDownToLine,ArrowLeft,ArrowRight,Check,ChevronDown,ChevronLeft,ChevronRight,Clapperboard,Download,Film,GripVertical,History,ListVideo,Maximize,Pause,Play,Redo2,RotateCcw,Scissors,Search,Split,Undo2,Upload,Volume2,VolumeX,X,Captions,Keyboard,AlignLeft,LocateFixed} from 'lucide-react';
+import {ArrowDownToLine,ArrowLeft,ArrowRight,Check,ChevronDown,ChevronLeft,ChevronRight,Clapperboard,MessageSquare,Download,Film,GripVertical,History,ListVideo,Maximize,Pause,Play,Redo2,RotateCcw,Scissors,Search,Split,Undo2,Upload,Volume2,VolumeX,X,Captions,Keyboard,AlignLeft,LocateFixed} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle} from '@/components/ui/dialog';
 import Transcript,{type TranscriptHandle} from '@/components/transcript';
 import Waveform from '@/components/waveform';
 import ProjectControls,{type WorkspaceInfo} from '@/components/project-controls';
+import {AnnotationsPanel,AnnotationDialog} from '@/components/annotations';
 import {useProject} from '@/lib/use-project';
-import {atEditTime,buildCutReport,commit,commitReel,createReel,cutRange,duration,extractEditRange,isolateRange,moveClips,parseTimecode,positioned,removedRanges,sourceToEdit,splitClip,timecode,uid,undoProject,undoReel,validateProject,type Chapter,type Clip,type Recording,type Snapshot,type TimeRange,type ViewMode} from '@/lib/editor-model';
+import {annotationRanges,buildAnnotationReport,type Annotation,atEditTime,buildCutReport,cutReportEntries,commit,commitReel,createReel,cutRange,duration,extractEditRange,isolateRange,moveClips,parseTimecode,positioned,removedRanges,sourceToEdit,splitClip,timecode,uid,undoProject,undoReel,validateProject,type Chapter,type Clip,type Recording,type Snapshot,type TimeRange,type ViewMode} from '@/lib/editor-model';
 const EMPTY:Clip[]=[];
-interface ExportJob {id:string;status:string;progress:number;message:string}
+interface ViewBookmark { workspace:'main'|'reels'; reelId:string|null; mode:ViewMode; source:number; time:number; clipId:string|null; range:TimeRange|null; selected:string[]; leftTab:'chapters'|'history'; pickedChapter:string|null; follow:boolean; transcriptScroll:number; viewerScroll:number; railScroll:number }
+type ExportJob = import('./electron').ElectronExportJob;
 function download(name:string,text:string,type='application/json'){
  void type;void window.cutroom.saveText({suggestedName:name,text});
 }
@@ -28,11 +30,14 @@ export default function Home(){
  const [range,setRange]=useState<TimeRange|null>(null),[selected,setSelected]=useState<string[]>([]),[query,setQuery]=useState(''),[searchCount,setSearchCount]=useState(0),[follow,setFollow]=useState(true);
  const [leftTab,setLeftTab]=useState<'chapters'|'history'>('chapters'),[pickedChapter,setPickedChapter]=useState<string|null>(null),[chapterQuery,setChapterQuery]=useState('');
  const [workspace,setWorkspace]=useState<'main'|'reels'>('main'),[activeReelId,setActiveReelId]=useState<string|null>(null);
+ const [annotationsOpen,setAnnotationsOpen]=useState(false),[annotationDraft,setAnnotationDraft]=useState<Annotation|null>(null),[deletedAnnotation,setDeletedAnnotation]=useState<Annotation|null>(null);
  const [toast,setToast]=useState(''),[muted,setMuted]=useState(false),[speed,setSpeed]=useState('1'),[burned,setBurned]=useState(false),[peaks,setPeaks]=useState<number[]>([]);
+ const [exportScope,setExportScope]=useState<'current'|'all-reels'>('current'),[exportStarting,setExportStarting]=useState(false);
  const [exportOpen,setExportOpen]=useState(false),[shortcutsOpen,setShortcutsOpen]=useState(false),[burnExport,setBurnExport]=useState(true),[exportHeight,setExportHeight]=useState('1080'),[job,setJob]=useState<ExportJob|null>(null),[exportError,setExportError]=useState('');
  const [dragIds,setDragIds]=useState<string[]>([]),[dropBefore,setDropBefore]=useState<string|null>(null);
  const video=useRef<HTMLVideoElement>(null),frame=useRef<HTMLDivElement>(null),transcript=useRef<TranscriptHandle>(null),importFile=useRef<HTMLInputElement>(null),clipRail=useRef<HTMLDivElement>(null);
  const projectRef=useRef(project),modeRef=useRef(mode),dataRef=useRef(data),workspaceRef=useRef(workspace),activeReelIdRef=useRef(activeReelId),activeClipsRef=useRef<Clip[]>(EMPTY),sourceTime=useRef(0),viewTime=useRef(0),activeClip=useRef<string|null>(null),forceFollow=useRef(false),mediaReady=useRef(false);
+ const viewBookmarks=useRef(new Map<string,ViewBookmark>()),viewKey=useRef('main'),lastReelId=useRef<string|null>(null),pendingViewRestore=useRef<ViewBookmark|null>(null);
  const activeReel=workspace==='reels'?project?.reels.find(reel=>reel.id===activeReelId)||null:null;
  const clips=workspace==='reels'?(activeReel?.clips||EMPTY):(project?.clips||EMPTY),total=duration(clips),displayDuration=mode==='edit'?total:data?.duration||0;
  useLayoutEffect(()=>{projectRef.current=project;modeRef.current=mode;dataRef.current=data;workspaceRef.current=workspace;activeReelIdRef.current=activeReelId;activeClipsRef.current=clips},[project,mode,data,workspace,activeReelId,clips]);
@@ -118,7 +123,15 @@ export default function Home(){
   }
   raf=requestAnimationFrame(tick);return()=>cancelAnimationFrame(raf);
  },[]);
- useEffect(()=>{forceFollow.current=true},[mode,clips]);
+ useLayoutEffect(()=>{
+  const saved=pendingViewRestore.current;
+  if(saved){
+   pendingViewRestore.current=null;forceFollow.current=false;
+   transcript.current?.restoreScroll(saved.transcriptScroll);
+   const viewer=document.querySelector('.viewer-panel');if(viewer)viewer.scrollTop=saved.viewerScroll;
+   if(clipRail.current)clipRail.current.scrollLeft=saved.railScroll;
+  }else forceFollow.current=true;
+ },[mode,clips,annotationsOpen,activeReelId]);
  useEffect(()=>{if(video.current)video.current.playbackRate=Number(speed)},[speed]);
  function saveEdit(next:Snapshot,type:string,label:string,detail?:unknown){
   const p=projectRef.current;if(!p)return;pause();let result;
@@ -219,12 +232,44 @@ export default function Home(){
   if(!data||!project||workspace!=='main')return;let next=clips;for(const cut of data.priorCuts)next=cutRange(next,cut,'source');
   saveEdit({clips:next,chapters:project.chapters},'prior-cuts','Apply the two earlier transcript cuts',data.priorCuts);seek(0);notify('Earlier transcript cuts applied.');
  }
+ function rememberView(){
+  const source=video.current?.currentTime??sourceTime.current;
+  const current=positioned(activeClipsRef.current).find(c=>c.id===activeClip.current);
+  const time=modeRef.current==='source'?source:current?current.offset+Math.max(0,Math.min(current.end-current.start,source-current.start)):viewTime.current;
+  const saved:ViewBookmark={workspace:workspaceRef.current,reelId:activeReelIdRef.current,mode:modeRef.current,source,time,clipId:activeClip.current,range:range?{...range}:null,selected:[...selected],leftTab,pickedChapter,follow,transcriptScroll:transcript.current?.scrollTop()||0,viewerScroll:document.querySelector('.viewer-panel')?.scrollTop||0,railScroll:clipRail.current?.scrollLeft||0};
+  viewBookmarks.current.set(viewKey.current,saved);return saved;
+ }
+ function restoreView(saved:ViewBookmark,annotations:boolean){
+  const p=projectRef.current;if(!p)return;pause();transcript.current?.clearSelection();
+  const reel=p.reels.find(r=>r.id===saved.reelId),nextWorkspace=saved.workspace;
+  const id=nextWorkspace==='reels'?reel?.id||null:null,list=nextWorkspace==='reels'?reel?.clips||EMPTY:p.clips;
+  workspaceRef.current=nextWorkspace;activeReelIdRef.current=id;activeClipsRef.current=list;
+  setWorkspace(nextWorkspace);setActiveReelId(id);setAnnotationsOpen(annotations);
+  modeRef.current=saved.mode;setMode(saved.mode);setSelected(saved.selected.filter(id=>list.some(c=>c.id===id)));setLeftTab(saved.leftTab);setPickedChapter(saved.pickedChapter);setFollow(saved.follow);
+  let target=saved.source;
+  if(saved.mode==='edit'){
+   const same=positioned(list).find(c=>c.id===saved.clipId&&saved.source>=c.start&&saved.source<=c.end);
+   target=same?same.offset+saved.source-same.start:sourceToEdit(list,saved.source,saved.clipId||undefined)?.time??Math.min(saved.time,duration(list));
+  }
+  const limit=saved.mode==='source'?dataRef.current?.duration||0:duration(list);
+  setRange(saved.range?{start:Math.min(saved.range.start,limit),end:Math.min(saved.range.end,limit)}:null);
+  pendingViewRestore.current=saved;
+  if(list.length||saved.mode==='source')seek(target,false);
+  else{activeClip.current=null;sourceTime.current=saved.source;viewTime.current=0;setSourceClock(saved.source);setClock(0)}
+ }
  function openTimeline(nextWorkspace:'main'|'reels',reelId?:string){
-  const p=projectRef.current;if(!p)return;pause();transcript.current?.clearSelection();setRange(null);setSelected([]);setLeftTab('chapters');
-  const id=nextWorkspace==='reels'?(reelId||activeReelIdRef.current||p.reels[0]?.id||null):null;
+  const p=projectRef.current;if(!p)return;
+  const id=nextWorkspace==='reels'?(reelId||lastReelId.current||p.reels[0]?.id||null):null;
+  const key=nextWorkspace==='reels'?'reel:'+id:'main';if(viewKey.current===key)return;
+  rememberView();if(nextWorkspace==='reels')lastReelId.current=id;
   const list=nextWorkspace==='reels'?(p.reels.find(reel=>reel.id===id)?.clips||EMPTY):p.clips;
-  workspaceRef.current=nextWorkspace;activeReelIdRef.current=id;activeClipsRef.current=list;setWorkspace(nextWorkspace);setActiveReelId(id);modeRef.current='edit';setMode('edit');activeClip.current=list[0]?.id||null;
-  if(list.length)seek(0);else{sourceTime.current=0;viewTime.current=0;setSourceClock(0);setClock(0)}
+  const saved=viewBookmarks.current.get(key)||{workspace:nextWorkspace,reelId:id,mode:'edit' as const,source:list[0]?.start||0,time:0,clipId:list[0]?.id||null,range:null,selected:[],leftTab:'chapters' as const,pickedChapter:null,follow,transcriptScroll:0,viewerScroll:0,railScroll:0};
+  viewKey.current=key;restoreView(saved,false);
+ }
+ function openAnnotations(keepCurrent=false){
+  if(viewKey.current==='annotations'){setAnnotationsOpen(true);return}
+  const current=rememberView();viewKey.current='annotations';
+  restoreView(keepCurrent?current:viewBookmarks.current.get('annotations')||current,true);
  }
  function makeReel(){
   const p=projectRef.current;if(!p||!range||Math.abs(range.end-range.start)<.001)return;
@@ -233,40 +278,73 @@ export default function Home(){
   if(!reelClips.length){notify('That selection does not contain any video.');return}
   const reel=createReel(`Reel ${String(p.reels.length+1).padStart(2,'0')} · ${timecode(reelClips[0].start)}`,reelClips);
   reel.events.push({id:uid(),at:new Date().toISOString(),type:'create',label:`Created reel from ${timecode(start,true)} → ${timecode(end,true)} (${modeRef.current} time)`,detail:{range:{start,end},mode:modeRef.current}});
-  const next={...p,reels:[...p.reels,reel]};projectRef.current=next;activeClipsRef.current=reel.clips;update(next);openTimeline('reels',reel.id);notify(`Created ${reel.title}. The main cut was not changed.`);
+  const next={...p,reels:[...p.reels,reel]};projectRef.current=next;update(next);openTimeline('reels',reel.id);notify(`Created ${reel.title}. The main cut was not changed.`);
  }
  function renameReel(title:string){
   const p=projectRef.current,reelId=activeReelIdRef.current;if(!p||!reelId||!title.trim())return;
   const next={...p,reels:p.reels.map(reel=>reel.id===reelId?{...reel,title:title.trim(),events:[...reel.events,{id:uid(),at:new Date().toISOString(),type:'rename',label:`Rename reel to “${title.trim()}”`}]}:reel)};projectRef.current=next;update(next);
  }
+ function makeAnnotation(){
+  const p=projectRef.current,d=dataRef.current;if(!p||!d||!range)return;
+  const ranges=annotationRanges(activeClipsRef.current,range,modeRef.current,d.duration);if(!ranges.length)return;
+  pause();const now=new Date().toISOString();
+  setAnnotationDraft({id:uid(),text:'',createdAt:now,updatedAt:now,ranges,context:modeRef.current==='source'?'Source recording':activeReel?.title||'Main cut',...(activeReel&&modeRef.current==='edit'?{reelId:activeReel.id}:{})});
+ }
+ function saveAnnotation(text:string){
+  const p=projectRef.current;if(!p||!annotationDraft)return;
+  const note={...annotationDraft,text,updatedAt:new Date().toISOString()};
+  const next={...p,annotations:p.annotations.some(a=>a.id===note.id)?p.annotations.map(a=>a.id===note.id?note:a):[...p.annotations,note]};
+  projectRef.current=next;update(next);setAnnotationDraft(null);openAnnotations(true);notify('Annotation saved.');
+ }
+ function deleteAnnotation(note:Annotation){
+  const p=projectRef.current;if(!p)return;const next={...p,annotations:p.annotations.filter(a=>a.id!==note.id)};
+  projectRef.current=next;update(next);setDeletedAnnotation(note);notify('Annotation deleted · Undo delete is available in the annotations tab.');
+ }
+ function restoreAnnotation(){
+  const p=projectRef.current;if(!p||!deletedAnnotation)return;const next={...p,annotations:[...p.annotations,deletedAnnotation].sort((a,b)=>a.createdAt.localeCompare(b.createdAt))};
+  projectRef.current=next;update(next);setDeletedAnnotation(null);
+ }
+ function openAnnotationRange(selected:TimeRange){
+  pause();transcript.current?.clearSelection();modeRef.current='source';setMode('source');seek(selected.start);setRange({...selected});
+ }
+ async function saveAnnotations(){
+  const p=projectRef.current,d=dataRef.current;if(!p||!d)return;
+  try{const result=await window.cutroom.saveText({suggestedName:'annotations.md',text:buildAnnotationReport(d.title,p.source,p.annotations,d.words)});if(!result.cancelled)notify('Annotations exported as Markdown.')}catch(error){notify((error as Error).message)}
+ }
  function saveReport(){
   if(!project||!data)return;
   const title=activeReel?.title||data.title,filename=activeReel?'reel-cut-report.md':'cut-report.md';
-  const cuts=removedRanges(clips,data.duration);
-  download(filename,buildCutReport(title,project.source,clips,data.duration,data.words),'text/markdown;charset=utf-8');
+  const cuts=cutReportEntries(clips,data.duration,data.words,activeReel?'reel':'main');
+  download(filename,buildCutReport(title,project.source,clips,data.duration,data.words,activeReel?'reel':'main'),'text/markdown;charset=utf-8');
   notify(`Saved a Markdown report with ${cuts.length} cut${cuts.length===1?'':'s'}.`);
  }
  async function startExport(){
-  if(!project)return;setExportError('');
-  const exportProject={...project,clips};
-  try{const result=await window.cutroom.startExport({project:exportProject,burn:burnExport,height:Number(exportHeight),title:activeReel?.title||data?.title||'Cutroom export',kind:activeReel?'reel':'main'});setJob(result)}catch(e){setExportError((e as Error).message)}
+  if(!project||exportStarting)return;setExportError('');setExportStarting(true);
+  try{
+   const result=exportScope==='all-reels'
+    ?await window.cutroom.startReelsExport({project,burn:burnExport,height:Number(exportHeight)})
+    :await window.cutroom.startExport({project:{...project,clips},burn:burnExport,height:Number(exportHeight),title:activeReel?.title||data?.title||'Cutroom export',kind:activeReel?'reel':'main'});
+   if(result)setJob(result);
+  }catch(e){setExportError((e as Error).message)}finally{setExportStarting(false)}
  }
  async function prepareSwitch(){pause();return await flush()}
  if(workspaceInfo?.active===false||loadError||(!project&&error))return <div className="startup"><Scissors/><h1>Cutroom projects</h1><p>{loadError||error||'Open a saved project or start a new recording.'}</p><ProjectControls info={workspaceInfo} welcome prepare={prepareSwitch}/></div>;
  if(!data||!project)return <div className="startup"><Scissors/><h1>Opening your recording</h1><p>Loading the transcript and your saved edits…</p></div>;
  const rangeLength=range?Math.abs(range.end-range.start):0;
- const busy=job&&['queued','rendering'].includes(job.status);
+ const busy=exportStarting||!!(job&&['queued','rendering'].includes(job.status));
+ const allReels=exportScope==='all-reels',exportableReels=project.reels.filter(reel=>reel.clips.length),emptyReels=project.reels.length-exportableReels.length;
+ function showExport(scope:'current'|'all-reels'){setExportScope(scope);setExportError('');setExportOpen(true)}
  const undoCount=workspace==='reels'?(activeReel?.undo.length||0):project.undo.length,redoCount=workspace==='reels'?(activeReel?.redo.length||0):project.redo.length;
  return <main className="editor">
   <header className="app-header"><div className="brand"><span className="brand-icon"><Scissors size={19}/></span><span className="brand-wordmark">cutroom</span><span className="brand-divider"/><span className="project-name" title={data.title}>{data.title}</span></div>
-   <ProjectControls info={workspaceInfo} prepare={prepareSwitch}/><nav className="workspace-tabs" aria-label="Edit workspace"><button className={workspace==='main'?'active':''} onClick={()=>openTimeline('main')}><Film size={15}/>Main cut</button><button className={workspace==='reels'?'active':''} onClick={()=>openTimeline('reels')}><Clapperboard size={15}/>Reels <span>{project.reels.length}</span></button></nav>
-   <div className="header-actions"><button className={'local-status '+(error?'status-error':'')} onClick={()=>void flush()} title={error||'Edits are saved in this project'}>{status}</button><div className="undo-controls"><Button variant="ghost" size="icon" aria-label="Undo edit" title="Undo · ⌘Z" disabled={!undoCount} onClick={()=>undo()}><Undo2/></Button><Button variant="ghost" size="icon" aria-label="Redo edit" title="Redo · ⇧⌘Z" disabled={!redoCount} onClick={()=>undo(true)}><Redo2/></Button></div><Button variant="outline" onClick={()=>setShortcutsOpen(true)} size="icon" aria-label="Keyboard shortcuts"><Keyboard/></Button><Button onClick={()=>setExportOpen(true)}><ArrowDownToLine/>{busy?'Exporting…':activeReel?'Export reel':'Export'}</Button></div>
+   <ProjectControls info={workspaceInfo} prepare={prepareSwitch}/><nav className="workspace-tabs" aria-label="Edit workspace"><button className={!annotationsOpen&&workspace==='main'?'active':''} onClick={()=>openTimeline('main')}><Film size={15}/>Main cut</button><button className={!annotationsOpen&&workspace==='reels'?'active':''} onClick={()=>openTimeline('reels')}><Clapperboard size={15}/>Reels <span>{project.reels.length}</span></button><button className={annotationsOpen?'active':''} onClick={()=>openAnnotations()}><MessageSquare size={15}/>Annotations <span>{project.annotations.length}</span></button></nav>
+   <div className="header-actions"><button className={'local-status '+(error?'status-error':'')} onClick={()=>void flush()} title={error||'Edits are saved in this project'}>{status}</button><div className="undo-controls"><Button variant="ghost" size="icon" aria-label="Undo edit" title="Undo · ⌘Z" disabled={!undoCount} onClick={()=>undo()}><Undo2/></Button><Button variant="ghost" size="icon" aria-label="Redo edit" title="Redo · ⇧⌘Z" disabled={!redoCount} onClick={()=>undo(true)}><Redo2/></Button></div><Button variant="outline" onClick={()=>setShortcutsOpen(true)} size="icon" aria-label="Keyboard shortcuts"><Keyboard/></Button><Button onClick={()=>annotationsOpen?void saveAnnotations():showExport(busy&&job?.kind==='reels'?'all-reels':'current')}><ArrowDownToLine/>{annotationsOpen?'Export notes':busy?'Exporting…':activeReel?'Export reel':'Export'}</Button></div>
   </header>
   {error&&<div className="error-banner">{error} {hasRecovery&&<button onClick={()=>download('cutroom-recovery.json',recoveryText())}>Download recovery</button>}</div>}
   <div className="workspace">
-   <aside className="chapter-panel"><div className="left-tabs"><button className={leftTab==='chapters'?'active':''} onClick={()=>setLeftTab('chapters')}>{workspace==='main'?<ListVideo size={15}/>:<Clapperboard size={15}/>} {workspace==='main'?'Chapters':'Reels'} <span>{workspace==='main'?project.chapters.length:project.reels.length}</span></button><button className={leftTab==='history'?'active':''} onClick={()=>setLeftTab('history')}><History size={14}/>Edits <span>{workspace==='main'?project.events.length:(activeReel?.events.length||0)}</span></button></div>
-   {workspace==='main'?(leftTab==='chapters'?<><div className="chapter-search"><Search size={13}/><Input placeholder="Find a question…" aria-label="Find a chapter" value={chapterQuery} onChange={e=>setChapterQuery(e.target.value)}/></div><div className="chapter-list">{[...project.chapters].sort((a,b)=>(a.start??Infinity)-(b.start??Infinity)).filter(c=>`${c.title} ${c.question}`.toLocaleLowerCase().includes(chapterQuery.toLocaleLowerCase())).map(c=><button className={`chapter-item ${chapter?.id===c.id?'active':''} ${c.kind==='missing'?'missing':''}`} key={c.id} onClick={()=>chapterClick(c)} title={c.question}><span className="chapter-number">{String(c.number).padStart(2,'0')}</span><span><b>{c.title}</b><small>{c.start===null?'Not found in recording':timecode(c.start)} {c.kind==='covered'&&<i>in answer</i>}</small></span>{c.id===liveChapter?.id&&<span className="now-dot"/>}</button>)}</div><div className="chapter-footnote"><span className="tiny-dot"/>In recording order <span>·</span> Original question numbers</div></>:<><div className="history-tools"><Button variant="outline" size="sm" onClick={saveReport}><Download/>Save report</Button><Button variant="ghost" size="sm" onClick={()=>importFile.current?.click()}><Upload/>Import project</Button></div><div className="history-list">{!project.events.length&&<div className="history-empty"><History size={25}/><h3>A fresh cut.</h3><p>Every cut, move, and chapter adjustment will appear here.</p>{data.priorCuts.length>0&&<Button variant="outline" onClick={priorCuts}>Apply earlier transcript cuts</Button>}</div>}{[...project.events].reverse().map(e=><div className="history-event" key={e.id}><span className="event-type">{e.type}</span><p>{e.label}</p><time>{new Date(e.at).toLocaleTimeString()}</time></div>)}</div><div className="chapter-footnote">Saved in this project</div></>):leftTab==='chapters'?<><div className="reel-list">{!project.reels.length&&<div className="reels-empty"><Clapperboard size={28}/><h3>No reels yet</h3><p>Select part of the main cut or source, then choose Create reel.</p><Button variant="outline" size="sm" onClick={()=>openTimeline('main')}>Go to main cut</Button></div>}{project.reels.map((reel,index)=><button key={reel.id} className={`reel-item ${reel.id===activeReelId?'active':''}`} onClick={()=>openTimeline('reels',reel.id)}><span>{String(index+1).padStart(2,'0')}</span><b>{reel.title}</b><small>{timecode(duration(reel.clips))} · {reel.clips.length} clips</small></button>)}</div>{activeReel&&<div className="reel-name"><label>Reel name<input key={activeReel.id} defaultValue={activeReel.title} onBlur={e=>renameReel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}/></label></div>}<div className="chapter-footnote">Reels have independent edits</div></>:<><div className="history-tools"><Button variant="outline" size="sm" onClick={saveReport} disabled={!activeReel}><Download/>Save report</Button></div><div className="history-list">{activeReel&&!activeReel.events.length&&<div className="history-empty"><History size={25}/><h3>A fresh reel.</h3><p>Its cuts and moves will appear here.</p></div>}{[...(activeReel?.events||[])].reverse().map(e=><div className="history-event" key={e.id}><span className="event-type">{e.type}</span><p>{e.label}</p><time>{new Date(e.at).toLocaleTimeString()}</time></div>)}</div><div className="chapter-footnote">Main cut remains independent</div></>}
-   </aside>
+   <aside className="chapter-panel">{annotationsOpen?<AnnotationsPanel annotations={project.annotations} data={data} onOpen={openAnnotationRange} onEdit={note=>{pause();setAnnotationDraft(note)}} onDelete={deleteAnnotation} onExport={()=>void saveAnnotations()} canRestore={!!deletedAnnotation} onRestore={restoreAnnotation}/>:<><div className="left-tabs"><button className={leftTab==='chapters'?'active':''} onClick={()=>setLeftTab('chapters')}>{workspace==='main'?<ListVideo size={15}/>:<Clapperboard size={15}/>} {workspace==='main'?'Chapters':'Reels'} <span>{workspace==='main'?project.chapters.length:project.reels.length}</span></button><button className={leftTab==='history'?'active':''} onClick={()=>setLeftTab('history')}><History size={14}/>Edits <span>{workspace==='main'?project.events.length:(activeReel?.events.length||0)}</span></button></div>
+   {workspace==='main'?(leftTab==='chapters'?<><div className="chapter-search"><Search size={13}/><Input placeholder="Find a question…" aria-label="Find a chapter" value={chapterQuery} onChange={e=>setChapterQuery(e.target.value)}/></div><div className="chapter-list">{[...project.chapters].sort((a,b)=>(a.start??Infinity)-(b.start??Infinity)).filter(c=>`${c.title} ${c.question}`.toLocaleLowerCase().includes(chapterQuery.toLocaleLowerCase())).map(c=><button className={`chapter-item ${chapter?.id===c.id?'active':''} ${c.kind==='missing'?'missing':''}`} key={c.id} onClick={()=>chapterClick(c)} title={c.question}><span className="chapter-number">{String(c.number).padStart(2,'0')}</span><span><b>{c.title}</b><small>{c.start===null?'Not found in recording':timecode(c.start)} {c.kind==='covered'&&<i>in answer</i>}</small></span>{c.id===liveChapter?.id&&<span className="now-dot"/>}</button>)}</div><div className="chapter-footnote"><span className="tiny-dot"/>In recording order <span>·</span> Original question numbers</div></>:<><div className="history-tools"><Button variant="outline" size="sm" onClick={saveReport}><Download/>Save report</Button><Button variant="ghost" size="sm" onClick={()=>importFile.current?.click()}><Upload/>Import project</Button></div><div className="history-list">{!project.events.length&&<div className="history-empty"><History size={25}/><h3>A fresh cut.</h3><p>Every cut, move, and chapter adjustment will appear here.</p>{data.priorCuts.length>0&&<Button variant="outline" onClick={priorCuts}>Apply earlier transcript cuts</Button>}</div>}{[...project.events].reverse().map(e=><div className="history-event" key={e.id}><span className="event-type">{e.type}</span><p>{e.label}</p><time>{new Date(e.at).toLocaleTimeString()}</time></div>)}</div><div className="chapter-footnote">Saved in this project</div></>):leftTab==='chapters'?<><div className="history-tools"><Button variant="outline" size="sm" disabled={!exportableReels.length} onClick={()=>showExport('all-reels')}><Download/>Export all reels</Button></div><div className="reel-list">{!project.reels.length&&<div className="reels-empty"><Clapperboard size={28}/><h3>No reels yet</h3><p>Select part of the main cut or source, then choose Create reel.</p><Button variant="outline" size="sm" onClick={()=>openTimeline('main')}>Go to main cut</Button></div>}{project.reels.map((reel,index)=><button key={reel.id} className={`reel-item ${reel.id===activeReelId?'active':''}`} onClick={()=>openTimeline('reels',reel.id)}><span>{String(index+1).padStart(2,'0')}</span><b>{reel.title}</b><small>{timecode(duration(reel.clips))} · {reel.clips.length} clips</small></button>)}</div>{activeReel&&<div className="reel-name"><label>Reel name<input key={activeReel.id} defaultValue={activeReel.title} onBlur={e=>renameReel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}/></label></div>}<div className="chapter-footnote">Reels have independent edits</div></>:<><div className="history-tools"><Button variant="outline" size="sm" onClick={saveReport} disabled={!activeReel}><Download/>Save report</Button></div><div className="history-list">{activeReel&&!activeReel.events.length&&<div className="history-empty"><History size={25}/><h3>A fresh reel.</h3><p>Its cuts and moves will appear here.</p></div>}{[...(activeReel?.events||[])].reverse().map(e=><div className="history-event" key={e.id}><span className="event-type">{e.type}</span><p>{e.label}</p><time>{new Date(e.at).toLocaleTimeString()}</time></div>)}</div><div className="chapter-footnote">Main cut remains independent</div></>}
+   </>}</aside>
    <section className="viewer-panel"><div className="panel-heading">{activeReel?<Clapperboard size={15}/>:<Film size={15}/>}<strong>{activeReel?activeReel.title:'Viewer'}</strong><div className="mode-switch"><button className={mode==='edit'?'active':''} onClick={()=>switchMode('edit')}>{activeReel?'This reel':'Your cut'}</button><button className={mode==='source'?'active':''} onClick={()=>switchMode('source')}>Source</button></div></div>
     <div ref={frame} className="video-frame"><video ref={video} src={window.cutroom.mediaUrl} preload="auto" playsInline muted={muted} onLoadedMetadata={()=>{mediaReady.current=true;seek(viewTime.current)}} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onEnded={()=>{if(modeRef.current==='edit')advance()}} onError={()=>notify('The video could not load. Choose the original video again.')} onClick={togglePlay}><track kind="captions" src={window.cutroom.captionsUrl} srcLang="ru" label="Русский"/></video>
      {!burned&&<span className="source-time">SOURCE {timecode(sourceClock,true)}</span>}
@@ -277,7 +355,7 @@ export default function Home(){
     <Waveform peaks={peaks} clips={clips} mode={mode} sourceDuration={data.duration} time={clock} range={range} onSeek={seek} onRange={selectRange}/>
     <div className="selection-panel"><div className="selection-heading"><span><Scissors size={13}/> {range?'Selected range':'Make a selection'}</span><span>{range?`${rangeLength.toFixed(2)}s · ${mode==='edit'?'edit':'source'} time`:'Select words or mark in / out'}</span>{range&&<button aria-label="Clear selection" onClick={()=>{setRange(null);transcript.current?.clearSelection()}}><X size={13}/></button>}</div>
      <div className="selection-fields"><TimeField label="In" value={range?.start??clock} onChange={n=>setRange(r=>({start:Math.min(n,displayDuration),end:r?.end??viewTime.current}))}/><Button variant="ghost" size="icon-sm" title="Mark in · I" aria-label="Mark in point" onClick={()=>mark('in')}><LocateFixed/></Button><span className="range-dash">—</span><TimeField label="Out" value={range?.end??clock} onChange={n=>setRange(r=>({start:r?.start??viewTime.current,end:Math.min(n,displayDuration)}))}/><Button variant="ghost" size="icon-sm" title="Mark out · O" aria-label="Mark out point" onClick={()=>mark('out')}><LocateFixed/></Button></div>
-     <div className="selection-actions"><Button variant="destructive" disabled={rangeLength<.001||workspace==='reels'&&!activeReel} onMouseDown={e=>e.preventDefault()} onClick={performCut}><Scissors/>Cut selection <kbd>⌫</kbd></Button><Button variant="outline" disabled={rangeLength<.001||workspace==='reels'&&!activeReel} onMouseDown={e=>e.preventDefault()} onClick={isolate}><Split/>Make clip</Button><Button className="create-reel" disabled={rangeLength<.001} onMouseDown={e=>e.preventDefault()} onClick={makeReel}><Clapperboard/>Create reel</Button>{mode==='source'&&activeReel&&<Button variant="ghost" disabled={rangeLength<.001} onClick={appendSource}>Append to reel</Button>}{mode==='source'&&workspace==='main'&&<Button variant="ghost" disabled={rangeLength<.001} onClick={appendSource}>Append to cut</Button>}<div className="frame-controls"><Button variant="ghost" size="icon-xs" aria-label="Previous frame" title="Previous frame" onClick={()=>seek(clock-1/30)}><ChevronLeft/></Button><span>1 frame</span><Button variant="ghost" size="icon-xs" aria-label="Next frame" title="Next frame" onClick={()=>seek(clock+1/30)}><ChevronRight/></Button></div></div>
+     <div className="selection-actions"><Button variant="destructive" disabled={rangeLength<.001||workspace==='reels'&&!activeReel} onMouseDown={e=>e.preventDefault()} onClick={performCut}><Scissors/>Cut selection <kbd>⌫</kbd></Button><Button variant="outline" disabled={rangeLength<.001||workspace==='reels'&&!activeReel} onMouseDown={e=>e.preventDefault()} onClick={isolate}><Split/>Make clip</Button><Button className="create-reel" disabled={rangeLength<.001} onMouseDown={e=>e.preventDefault()} onClick={makeReel}><Clapperboard/>Create reel</Button><Button variant="outline" className="create-annotation" disabled={rangeLength<.001} onMouseDown={e=>e.preventDefault()} onClick={makeAnnotation}><MessageSquare/>Annotate</Button>{mode==='source'&&activeReel&&<Button variant="ghost" disabled={rangeLength<.001} onClick={appendSource}>Append to reel</Button>}{mode==='source'&&workspace==='main'&&<Button variant="ghost" disabled={rangeLength<.001} onClick={appendSource}>Append to cut</Button>}<div className="frame-controls"><Button variant="ghost" size="icon-xs" aria-label="Previous frame" title="Previous frame" onClick={()=>seek(clock-1/30)}><ChevronLeft/></Button><span>1 frame</span><Button variant="ghost" size="icon-xs" aria-label="Next frame" title="Next frame" onClick={()=>seek(clock+1/30)}><ChevronRight/></Button></div></div>
     </div>
     {chapter&&<div className="chapter-detail"><div className="chapter-detail-heading"><span className="eyebrow">QUESTION {String(chapter.number).padStart(2,'0')}</span><button title="Adjust this chapter marker to the current source time" onClick={adjustChapter}>Set start here</button></div><p lang="ru">{chapter.question}</p>{chapter.note&&<small>{chapter.note}</small>}</div>}
     <div className="viewer-bottom"><span className="tiny-dot"/>{burned?'Source timestamp burned into review video':'Source timestamp overlay'}<span>{data.width} × {data.height} · {data.fps} fps source</span></div>
@@ -294,8 +372,22 @@ export default function Home(){
    <div className="assembly-bottom">{selectedClip?<label className="clip-rename"><span>Clip name</span><input aria-label="Selected clip name" key={selectedClip.id} defaultValue={selectedClip.label} onBlur={e=>{const label=e.target.value.trim();if(label&&label!==selectedClip.label)saveEdit({clips:clips.map(c=>c.id===selectedClip.id?{...c,label}:c),chapters:project.chapters},'rename',`Rename clip to “${label}”`)}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}/></label>:<span>Split or select text → Make clip → drag into place</span>}<div className="assembly-tail">{selected.length>0&&<select aria-label="Move selected clips before" value="" onChange={e=>{if(e.target.value)reorder(selected,e.target.value==="__end"?null:e.target.value)}}><option value="">Move before…</option>{clips.filter(c=>!selected.includes(c.id)).map(c=><option value={c.id} key={c.id}>{c.label}</option>)}<option value="__end">End of the edit</option></select>}<span>⌘ / Shift click for multiple <span>·</span> Changes are reversible</span></div></div>
   </footer>
   {toast&&<output className="toast" aria-live="polite"><Check size={14}/>{toast}</output>}
-  <input type="file" accept="application/json,.json" ref={importFile} hidden onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{const raw=JSON.parse(await file.text());const imported=validateProject(raw.project||raw,data);projectRef.current=imported;activeClipsRef.current=imported.clips;update(imported);openTimeline('main');seek(0);notify(`Imported ${file.name}, including all reels and edit history.`)}catch(err){notify((err as Error).message)}e.target.value=''}}/>
-  <Dialog open={exportOpen} onOpenChange={setExportOpen}><DialogContent className="export-dialog"><DialogHeader><DialogTitle>{activeReel?'Export reel':'Export your cut'}</DialogTitle><DialogDescription>{activeReel&&<>{activeReel.title} · </>}{clips.length} clips · {timecode(total)} · rendered from the original video</DialogDescription></DialogHeader><div className="export-summary">{activeReel?<Clapperboard size={25}/>:<Film size={25}/>}<div><strong>{activeReel?'Edited reel':'Edited video'} · MP4</strong><p>Includes the edited transcript and source-based edit plan.</p></div></div><label className="export-option"><span>Resolution</span><select value={exportHeight} onChange={e=>setExportHeight(e.target.value)} disabled={!!busy}><option value="1080">1080p · original resolution</option><option value="720">720p · smaller file</option></select></label><label className="export-check"><input type="checkbox" checked={burnExport} onChange={e=>setBurnExport(e.target.checked)} disabled={!!busy}/><span>Burn original source timestamps into the video<small>Uncheck for a clean final video.</small></span></label><p className="export-note">Each export includes the Markdown cut report, exact edit list, transcript, captions, and metadata.</p>{exportError&&<p role="alert" className="inline-error">{exportError}</p>}{job&&<div className="export-progress"><div><strong>{job.message}</strong><span>{Math.round(job.progress*100)}%</span></div><progress value={job.progress} max="1"/>{busy&&<Button variant="ghost" size="sm" onClick={()=>void window.cutroom.cancelExport(job.id)}>Cancel export</Button>}{job.status==='done'&&<div className="export-downloads"><button onClick={()=>void window.cutroom.saveExportFile(job.id,'edited-video.mp4')}><Download size={14}/>{activeReel?'Reel':'Video'}</button><button onClick={()=>void window.cutroom.saveExportFile(job.id,'cut-report.md')}>Cut report</button><button onClick={()=>void window.cutroom.saveExportFile(job.id,'transcript.txt')}>Transcript</button><button onClick={()=>void window.cutroom.saveExportFile(job.id,'subtitles.srt')}>Captions</button><button onClick={()=>void window.cutroom.saveExportFile(job.id,'edit-list.json')}>Edit list</button><button onClick={()=>void window.cutroom.revealExport(job.id)}>Show folder</button></div>}</div>}<div className="dialog-actions"><Button variant="outline" onClick={saveReport}><Download/>Save report</Button><Button disabled={!!busy||!clips.length} onClick={startExport}><ArrowDownToLine/>{busy?'Rendering…':activeReel?'Render reel':'Render video'}</Button></div></DialogContent></Dialog>
+  {annotationDraft&&<AnnotationDialog key={annotationDraft.id} note={annotationDraft} data={data} onClose={()=>setAnnotationDraft(null)} onSave={saveAnnotation}/>}
+  <input type="file" accept="application/json,.json" ref={importFile} hidden onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{const raw=JSON.parse(await file.text());const imported=validateProject(raw.project||raw,data);projectRef.current=imported;viewBookmarks.current.clear();lastReelId.current=null;viewKey.current='import';update(imported);openTimeline('main');seek(0);notify(`Imported ${file.name}, including all reels and edit history.`)}catch(err){notify((err as Error).message)}e.target.value=''}}/>
+  <Dialog open={exportOpen} onOpenChange={setExportOpen}><DialogContent className="export-dialog">
+   <DialogHeader><DialogTitle>{allReels?'Export all reels':activeReel?'Export reel':'Export your cut'}</DialogTitle><DialogDescription>{allReels?<>{exportableReels.length} reels · {timecode(exportableReels.reduce((sum,reel)=>sum+duration(reel.clips),0))} total</>:<>{activeReel&&<>{activeReel.title} · </>}{clips.length} clips · {timecode(total)} · rendered from the original video</>}</DialogDescription></DialogHeader>
+   <div className="export-summary">{allReels||activeReel?<Clapperboard size={25}/>:<Film size={25}/>}<div><strong>{allReels?'One MP4 per reel':activeReel?'Edited reel · MP4':'Edited video · MP4'}</strong><p>{allReels?'Choose a destination. Each reel gets its own folder with its video and edit report.':'Includes the edited transcript and source-based edit plan.'}</p></div></div>
+   <label className="export-option"><span>Resolution</span><select value={exportHeight} onChange={e=>setExportHeight(e.target.value)} disabled={busy}><option value="1080">1080p · original resolution</option><option value="720">720p · smaller file</option></select></label>
+   <label className="export-check"><input type="checkbox" checked={burnExport} onChange={e=>setBurnExport(e.target.checked)} disabled={busy}/><span>Burn original source timestamps into the video<small>Uncheck for a clean final video.</small></span></label>
+   <p className="export-note">Each export includes the Markdown cut report, exact edit list, transcript, captions, and metadata.{allReels&&' Reels use their own cuts and ordering. You can keep editing while they render.'}</p>
+   {allReels&&emptyReels>0&&<p className="export-note">{emptyReels} empty reel{emptyReels===1?'':'s'} will be skipped.</p>}
+   {exportError&&<p role="alert" className="inline-error">{exportError}</p>}
+   {job&&<div className="export-progress"><div><strong>{job.message}</strong><span>{Math.round(job.progress*100)}%</span></div><progress value={job.progress} max="1"/>
+    {['queued','rendering'].includes(job.status)&&<Button variant="ghost" size="sm" onClick={()=>void window.cutroom.cancelExport(job.id).then(()=>window.cutroom.getExport(job.id)).then(setJob).catch(e=>setExportError(e.message))}>Cancel export</Button>}
+    {job.kind==='reels'&&job.outputFolder?<><p className="export-note">{job.completed||0} of {job.total} reels saved{job.status==='cancelled'||job.status==='error'?'. Completed reels remain in the export folder.':'.'}<br/>{job.outputFolder}</p><div className="export-downloads"><button onClick={()=>void window.cutroom.revealExport(job.id).catch(e=>setExportError(e.message))}>Show folder</button></div></>:job.status==='done'&&<div className="export-downloads"><button onClick={()=>void window.cutroom.saveExportFile(job.id,'edited-video.mp4')}><Download size={14}/>{job.kind==='reel'?'Reel':'Video'}</button><button onClick={()=>void window.cutroom.saveExportFile(job.id,'cut-report.md')}>Cut report</button><button onClick={()=>void window.cutroom.saveExportFile(job.id,'transcript.txt')}>Transcript</button><button onClick={()=>void window.cutroom.saveExportFile(job.id,'subtitles.srt')}>Captions</button><button onClick={()=>void window.cutroom.saveExportFile(job.id,'edit-list.json')}>Edit list</button><button onClick={()=>void window.cutroom.revealExport(job.id)}>Show folder</button></div>}
+   </div>}
+   <div className="dialog-actions">{!allReels&&<Button variant="outline" onClick={saveReport}><Download/>Save report</Button>}<Button disabled={busy||(allReels?!exportableReels.length:!clips.length)} onClick={startExport}><ArrowDownToLine/>{exportStarting?'Choose destination…':busy?'Rendering…':allReels?'Choose folder & export':activeReel?'Render reel':'Render video'}</Button></div>
+  </DialogContent></Dialog>
   <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}><DialogContent className="shortcuts-dialog"><DialogHeader><DialogTitle>A few useful shortcuts</DialogTitle><DialogDescription>Select transcript text, or use the waveform and in/out marks.</DialogDescription></DialogHeader><div className="shortcut-list">{[['Space','Play / pause'],['I / O','Mark in / out'],['Delete','Cut selected time range'],['S','Split at playhead'],['← / →','Step one frame (outside text)'],['Shift ← / →','Skip five seconds'],['⌘ Z / ⇧ ⌘ Z','Undo / redo'],['⌥ ← / →','Move selected clips'],['Esc','Clear time selection']].map(([key,text])=><div key={key}><span>{text}</span><kbd>{key}</kbd></div>)}</div><p className="export-note">Make clip separates a text or waveform selection so you can move it. Source mode lets you revisit removed material and append it to your cut.</p></DialogContent></Dialog>
  </main>;
 }

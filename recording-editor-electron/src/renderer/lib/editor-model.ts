@@ -6,7 +6,8 @@ export interface Snapshot { clips:Clip[]; chapters:Chapter[] }
 export interface ReelSnapshot { clips:Clip[] }
 export interface EditEvent { id:string; at:string; type:string; label:string; detail?:unknown }
 export interface Reel extends ReelSnapshot { id:string; title:string; createdAt:string; events:EditEvent[]; undo:ReelSnapshot[]; redo:ReelSnapshot[] }
-export interface Project extends Snapshot { version:1; source:string; duration:number; revision:number; events:EditEvent[]; undo:Snapshot[]; redo:Snapshot[]; reels:Reel[] }
+export interface Annotation { id:string; createdAt:string; updatedAt:string; text:string; ranges:TimeRange[]; context:string; reelId?:string }
+export interface Project extends Snapshot { version:1; source:string; duration:number; revision:number; events:EditEvent[]; undo:Snapshot[]; redo:Snapshot[]; reels:Reel[]; annotations:Annotation[] }
 export interface PositionedClip extends Clip { offset:number; index:number }
 export interface TimeRange { start:number; end:number }
 export interface CutReportEntry extends TimeRange { first:string; last:string; wordCount:number }
@@ -64,18 +65,46 @@ function phraseFinish(words:Word[]) {
  }
  return words.slice(start).map(w=>w.text.trim()).join(' ');
 }
-export function cutReportEntries(clips:Clip[],sourceDuration:number,words:Word[]):CutReportEntry[] {
- return removedRanges(clips,sourceDuration).map(range=>{
+export function rangeReportEntry(range:TimeRange,words:Word[]):CutReportEntry {
   const inside=transcriptWords(words,range);
   if(!inside.length)return {...range,first:'(нет распознанной речи)',last:'(нет распознанной речи)',wordCount:0};
   const short=range.end-range.start<=3;
   return {...range,first:short?inside[0].text.trim():phraseStart(inside),last:short?inside.at(-1)!.text.trim():phraseFinish(inside),wordCount:inside.length};
- });
 }
-export function buildCutReport(title:string,source:string,clips:Clip[],sourceDuration:number,words:Word[]) {
- const entries=cutReportEntries(clips,sourceDuration,words);
+export function cutReportEntries(clips:Clip[],sourceDuration:number,words:Word[],kind:'main'|'reel'='main'):CutReportEntry[] {
+ const start=Math.min(...clips.map(clip=>clip.start)),end=Math.max(...clips.map(clip=>clip.end));
+ return removedRanges(clips,sourceDuration).filter(range=>kind!=='reel'||(range.start>=start&&range.end<=end)).map(range=>rangeReportEntry(range,words));
+}
+export function annotationRanges(clips:Clip[],range:TimeRange,mode:ViewMode,sourceDuration:number):TimeRange[] {
+ const selected=mode==='edit'?extractEditRange(clips,range):[{start:Math.min(range.start,range.end),end:Math.max(range.start,range.end)}];
+ const ranges:TimeRange[]=[];
+ for(const part of selected){
+  const start=Math.max(0,part.start),end=Math.min(sourceDuration,part.end);if(end-start<EPSILON)continue;
+  const previous=ranges.at(-1);
+  if(previous&&Math.abs(previous.end-start)<EPSILON)previous.end=end;
+  else ranges.push({start,end});
+ }
+ return ranges;
+}
+export function buildAnnotationReport(title:string,source:string,annotations:Annotation[],words:Word[]) {
+ const lines=[`# Аннотации: ${title}`,'',`Источник: ${source}`,`Аннотаций: ${annotations.length}`,'Все таймкоды относятся к исходной записи. Раздельные интервалы перечислены в порядке выделения.',''];
+ if(!annotations.length)lines.push('_Аннотаций пока нет._','');
+ annotations.forEach((note,index)=>{
+  lines.push(`## Аннотация ${String(index+1).padStart(2,'0')}`,'',`Контекст: ${note.context}`,'');
+  note.ranges.forEach((range,part)=>{
+   if(note.ranges.length>1)lines.push(`Фрагмент ${part+1}:`,'');
+   const entry=rangeReportEntry(range,words);
+   lines.push(`${timecode(range.start)} – ${entry.first}  `,`${timecode(range.end)} – ${entry.last}`,'');
+  });
+  lines.push('### Комментарий','',note.text,'');
+ });
+ return lines.join('\n');
+}
+export function buildCutReport(title:string,source:string,clips:Clip[],sourceDuration:number,words:Word[],kind:'main'|'reel'='main') {
+ if(kind==='reel'&&!clips.length)return '_Рилс пуст._\n';
+ const entries=cutReportEntries(clips,sourceDuration,words,kind);
  const removed=entries.reduce((sum,cut)=>sum+cut.end-cut.start,0);
- const lines=[
+ const lines=kind==='reel'?[`${timecode(Math.min(...clips.map(clip=>clip.start)))} – ${timecode(Math.max(...clips.map(clip=>clip.end)))}`,'']:[
   `# Монтажный лист: ${title}`,
   '',
   `Источник: \`${source}\`  `,
@@ -158,7 +187,7 @@ export function moveClips(clips:Clip[],ids:string[],beforeId:string|null):Clip[]
  return [...rest.slice(0,target),...moving,...rest.slice(target)];
 }
 export function createProject(data:Recording):Project {
- return {version:1,source:data.source,duration:data.duration,revision:0,clips:data.initialClips,chapters:data.chapters,events:[],undo:[],redo:[],reels:[]};
+ return {version:1,source:data.source,duration:data.duration,revision:0,clips:data.initialClips,chapters:data.chapters,events:[],undo:[],redo:[],reels:[],annotations:[]};
 }
 export function createReel(title:string,clips:Clip[]):Reel {
  return {id:uid(),title,createdAt:new Date().toISOString(),clips,events:[],undo:[],redo:[]};
@@ -209,6 +238,14 @@ export function validateProject(value:unknown,data:Recording):Project {
   if(!reel||typeof reel.id!=='string'||reelIds.has(reel.id)||typeof reel.title!=='string'||!reel.title.trim()||typeof reel.createdAt!=='string'||!Array.isArray(reel.undo)||!Array.isArray(reel.redo)||reel.undo.length>75||reel.redo.length>75)throw Error('Invalid reel.');
   reelIds.add(reel.id);checkClips(reel.clips);checkEvents(reel.events);
   for(const state of [...reel.undo,...reel.redo])checkClips(state.clips);
+ }
+ if(p.annotations===undefined)p.annotations=[];
+ if(!Array.isArray(p.annotations)||p.annotations.length>10000)throw Error('Invalid annotations.');
+ const annotationIds=new Set<string>();
+ for(const note of p.annotations){
+  if(!note||typeof note.id!=='string'||annotationIds.has(note.id)||typeof note.text!=='string'||typeof note.context!=='string'||typeof note.createdAt!=='string'||typeof note.updatedAt!=='string'||(note.reelId!==undefined&&typeof note.reelId!=='string')||!Array.isArray(note.ranges)||!note.ranges.length||note.ranges.length>2000)throw Error('Invalid annotation.');
+  annotationIds.add(note.id);
+  for(const r of note.ranges)if(!r||!Number.isFinite(r.start)||!Number.isFinite(r.end)||r.start<0||r.end>data.duration+.001||r.end-r.start<EPSILON)throw Error('Invalid annotation range.');
  }
  return p;
 }

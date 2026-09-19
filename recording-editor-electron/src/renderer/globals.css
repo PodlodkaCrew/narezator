@@ -245,7 +245,7 @@ svg { stroke-width:1.7; }
 .export-check { display:flex; align-items:flex-start; gap:10px; font-size:14px; }
 .export-check input { accent-color:var(--ink); margin-top:4px; }
 .export-check small { display:block; margin-top:5px; font-size:12px; }
-.export-note { font-size:12px; line-height:1.6; margin:0; }
+.export-note { font-size:12px; line-height:1.6; margin:0; overflow-wrap:anywhere; }
 .dialog-actions { display:flex; justify-content:space-between; align-items:center; gap:10px; }
 .export-progress { background:var(--yellow); padding:12px; border-radius:4px; font-size:12px; }
 .export-progress>div:first-child { display:flex; justify-content:space-between; gap:10px; }
@@ -330,4 +330,38 @@ svg { stroke-width:1.7; }
  .selection-panel { padding:10px; }
  .selection-heading { margin-bottom:7px; }
  .selection-actions { padding-top:8px; }
+}
+
+/* Source-anchored notes share the same panel language as chapters and reels. */
+.annotation-tools { display:flex; flex-wrap:wrap; gap:6px; padding:10px; border-bottom:1px solid var(--border); }
+.annotation-tools button { font-size:11px; }
+.annotation-list { flex:1; overflow:auto; padding:10px; }
+.annotation-card { margin-bottom:12px; padding:10px; border:1px solid var(--border); border-radius:4px; }
+.annotation-card-heading { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:11px; }
+.annotation-card-heading>div { display:flex; }
+.annotation-context { display:block; font-size:10px; margin:3px 0 9px; overflow-wrap:anywhere; }
+.annotation-range { display:block; width:100%; border:0; border-radius:3px; background:var(--yellow); color:var(--ink); text-align:left; padding:7px; margin-top:6px; }
+.annotation-range>span { display:flex; align-items:center; gap:4px; font-size:10px; }
+.annotation-range small { display:block; font-size:11px; line-height:1.4; margin-top:4px; overflow-wrap:anywhere; }
+.annotation-text { white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.5; margin:10px 0 0; }
+.annotation-boundaries { max-height:180px; overflow:auto; font-size:12px; }
+.annotation-boundaries>div { padding:9px; background:var(--yellow); border-radius:3px; margin-bottom:6px; }
+.annotation-boundaries p { margin:0 0 4px; overflow-wrap:anywhere; }
+.annotation-dialog textarea { resize:vertical; min-height:120px; max-height:35vh; width:100%; border:1px solid var(--border); border-radius:3px; padding:10px; background:transparent; color:var(--ink); font:14px/1.5 var(--font-mono); }
+.annotation-dialog textarea:focus { outline:2px solid var(--ink); outline-offset:2px; }
+.workspace-tabs:before { display:none; }
+.workspace-tabs button { position:relative; }
+.workspace-tabs button+button:before { content:''; position:absolute; left:-12px; top:calc(50% - 3px); width:6px; height:6px; border-radius:50%; background:var(--cream); }
+@media(max-width:1400px) { .project-name,.brand-divider { display:none; } }
+@media(max-width:1200px) { .local-status { width:8px; overflow:hidden; font-size:0; gap:0; } .local-status:before { flex:none; } .workspace-tabs { gap:12px; } .workspace-tabs button { padding-inline:8px; font-size:11px; } .workspace-tabs button+button:before { left:-9px; } .brand-wordmark { font-size:23px; } }
+@media(max-width:1250px) {
+ .selection-actions { display:grid; grid-template-columns:1fr 1fr; }
+ .selection-actions button { width:100%; height:28px; }
+}
+@media(max-height:800px) {
+ .timeline { height:148px; min-height:148px; }
+ .clip-card { height:70px; }
+ .clip-rail { min-height:82px; }
+ .clip-mini-wave { display:none; }
+ .video-frame { max-height:clamp(100px,calc(100cqh - 365px),32vh); }
 }

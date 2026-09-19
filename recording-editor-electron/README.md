@@ -30,6 +30,14 @@ Cutroom finds `recording-editor/public/recording.json` and the original video be
 
 To replace only the edits in an already open matching project, use **Main cut → Edits → Import project** with the latest edit JSON. For a different recording, use the full **Import Web Project…** flow above.
 
+Switching between Main cut, Reels and Annotations remembers the playhead, source/cut mode, selected range and transcript scroll position for each view during the session. Each reel has its own position, and returning to Reels restores the last selected reel.
+
+## Annotations
+
+Select transcript text, drag across the waveform, or set in/out points, then click **Annotate** beside **Create reel**. Write a freeform note and choose **Save annotation**. The **Annotations** tab lists notes across the main cut and reels; click a timestamp to open its original source range, or edit/delete a note. **Undo delete** restores the last removed note during the current session.
+
+**Export annotations** saves a Markdown report containing original source start/end timestamps, their boundary phrases (individual words for short ranges), and the full note text. Selections spanning removed or reordered clips retain each selected source interval in order. Notes remain anchored when clips are edited, and saving a note does not change cuts or reels. Old projects open with an empty annotations list; notes are included in project saves, copies, imports and recovery drafts.
+
 ## Visual identity
 
 The Electron interface follows the Podlodka × Non-Objective identity guide: dark blue instrument panels, warm cream surfaces, the supplied muted palette, and circular connectors. Elma Mono Regular is used for interface text and Ease Geometric A Black for the Cutroom wordmark. Both fonts are bundled for offline use. The theme covers the editor, reels, project picker and export dialogs.
@@ -42,9 +50,15 @@ npm run dev
 npm test
 npm run test:seek
 npm run test:projects
+npm run test:annotations
+npm run test:reels-export
 npm run package
 ```
 
 `test:seek` exercises real Electron word seeking and playback in main, source and reel views. `test:projects` exercises creating, closing and reopening projects while a save is in flight, in an isolated temporary profile. `npm run package` creates a local unsigned `.app`; signing and notarization require a Developer ID certificate.
 
 Exports use bundled FFmpeg and include `edited-video.mp4`, `cut-report.md`, `edit-list.json`, `project.json`, `transcript.txt` and `subtitles.srt`. Export jobs keep the source recording they started with even when you switch projects.
+
+Reel Markdown reports begin with the reel's original source start–end timestamps and list cuts only within that span. They omit the metadata introduction and the recording before/after the reel. This format applies to **Save report**, individual reel exports, and **Export all reels**.
+
+To export every reel, open **Reels → Export all reels**, choose resolution and source timestamps, then **Choose folder & export**. Cutroom creates a new `Cutroom-reels-…` folder in your chosen destination. Each reel gets a numbered folder containing its MP4 and the same Markdown cut report and supporting files as a single export. Empty reels are skipped; `reels.json` records each reel's export status. Reels render sequentially with overall progress and cancellation. Completed files remain available if you cancel or a later reel fails. You can keep editing: the batch uses a snapshot taken when you start it, preserving each reel's independent cuts and ordering.

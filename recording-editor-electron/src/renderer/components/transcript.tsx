@@ -2,7 +2,7 @@
 /* eslint-disable jsx-a11y/prefer-tag-over-role -- Timed word spans require a rich contenteditable textbox, rather than a plain textarea. */
 import {forwardRef,memo,useCallback,useEffect,useLayoutEffect,useImperativeHandle,useMemo,useRef} from 'react';
 import {type Clip,type Recording,type TimeRange,type ViewMode,timecode,positioned} from '@/lib/editor-model';
-export interface TranscriptHandle {follow:(time:number,force?:boolean)=>void;nextMatch:()=>void;clearSelection:()=>void}
+export interface TranscriptHandle {scrollTop:()=>number;restoreScroll:(top:number)=>void;follow:(time:number,force?:boolean)=>void;nextMatch:()=>void;clearSelection:()=>void}
 interface Props {data:Recording;clips:Clip[];mode:ViewMode;query:string;follow:boolean;onFollowChange:(follow:boolean)=>void;onSeek:(t:number)=>void;onRange:(r:TimeRange|null)=>void;onSearchCount:(n:number)=>void}
 interface Occurrence {key:string;id:number;text:string;start:number;end:number;speaker:number;section:number;clipId:string}
 const Transcript= memo(forwardRef<TranscriptHandle,Props>(function Transcript({data,clips,mode,query,follow,onFollowChange,onSeek,onRange,onSearchCount},ref){
@@ -47,6 +47,8 @@ const Transcript= memo(forwardRef<TranscriptHandle,Props>(function Transcript({d
   if(force||rect.top<bounds.top+30||rect.bottom>bounds.bottom-35){ignoreScrollUntil.current=performance.now()+120;box.scrollTop+=rect.top-bounds.top-box.clientHeight*.35}
  },[]);
  useImperativeHandle(ref,()=>({
+  scrollTop:()=>container.current?.scrollTop||0,
+  restoreScroll(top){ignoreScrollUntil.current=performance.now()+120;if(container.current)container.current.scrollTop=top},
   follow(time,force=false){
    lastTime.current=time;if(pointer.current)return;
    let lo=0,hi=words.length-1;

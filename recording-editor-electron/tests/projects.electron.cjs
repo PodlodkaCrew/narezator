@@ -47,6 +47,8 @@ app.whenReady().then(async()=>{
   await click('Create project…');await until("document.querySelector('.project-name')?.textContent==='sample'");
   assert.equal(store.load().recording.words.length,0);assert.equal(store.load().project.reels.length,0);
   await until("document.body.innerText.includes('No timed transcript')");
+  await evaluate("document.querySelectorAll('.workspace-tabs button')[1].click()");await until("document.body.innerText.includes('No reels yet')");
+  await evaluate("document.querySelectorAll('.workspace-tabs button')[0].click()");
   await click('Original project');await until("document.querySelector('.project-name')?.textContent==='Original project'");
   assert.equal(store.load().project.events.length,1);assert.equal(store.load().project.reels.length,1);
   await click('Close Project');await until("document.body.innerText.includes('Cutroom projects')");

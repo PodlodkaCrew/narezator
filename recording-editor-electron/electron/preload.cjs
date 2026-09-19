@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('cutroom',{
  listExports:()=>ipcRenderer.invoke('exports:list'),
  getExport:id=>ipcRenderer.invoke('exports:get',id),
  startExport:payload=>ipcRenderer.invoke('exports:start',payload),
+ startReelsExport:payload=>ipcRenderer.invoke('exports:reels',payload),
  cancelExport:id=>ipcRenderer.invoke('exports:cancel',id),
  saveExportFile:(id,name)=>ipcRenderer.invoke('exports:saveFile',{id,name}),
  revealExport:id=>ipcRenderer.invoke('exports:reveal',id),

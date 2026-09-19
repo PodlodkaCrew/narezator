@@ -40,11 +40,19 @@ function validateProject(project,recording){
   reelIds.add(reel.id);clips(reel.clips);events(reel.events);
   for(const key of ['undo','redo']){if(!Array.isArray(reel[key])||reel[key].length>75)throw Error('Invalid reel history.');for(const state of reel[key])clips(state?.clips)}
  }
+ if(project.annotations===undefined)project.annotations=[];
+ if(!Array.isArray(project.annotations)||project.annotations.length>10000)throw Error('Invalid annotations.');
+ const annotationIds=new Set();
+ for(const note of project.annotations){
+  if(!note||typeof note.id!=='string'||annotationIds.has(note.id)||typeof note.text!=='string'||typeof note.context!=='string'||typeof note.createdAt!=='string'||typeof note.updatedAt!=='string'||(note.reelId!==undefined&&typeof note.reelId!=='string')||!Array.isArray(note.ranges)||!note.ranges.length||note.ranges.length>2000)throw Error('Invalid annotation.');
+  annotationIds.add(note.id);
+  for(const r of note.ranges)if(!r||!finite(r.start)||!finite(r.end)||r.start<0||r.end>recording.duration+.001||r.end-r.start<EPSILON)throw Error('Invalid annotation range.');
+ }
  return project;
 }
 
 function initialProject(recording){
- return {version:1,source:recording.source,duration:recording.duration,revision:0,clips:clone(recording.initialClips),chapters:clone(recording.chapters),events:[],undo:[],redo:[],reels:[]};
+ return {version:1,source:recording.source,duration:recording.duration,revision:0,clips:clone(recording.initialClips),chapters:clone(recording.chapters),events:[],undo:[],redo:[],reels:[],annotations:[]};
 }
 
 function atomicJson(file,value){
