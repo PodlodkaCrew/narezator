@@ -3,9 +3,9 @@
 import {forwardRef,memo,useCallback,useEffect,useLayoutEffect,useImperativeHandle,useMemo,useRef} from 'react';
 import {type Clip,type Recording,type TimeRange,type ViewMode,timecode,positioned} from '@/lib/editor-model';
 export interface TranscriptHandle {follow:(time:number,force?:boolean)=>void;nextMatch:()=>void;clearSelection:()=>void}
-interface Props {data:Recording;clips:Clip[];mode:ViewMode;query:string;follow:boolean;onFollowChange:(follow:boolean)=>void;onSeek:(t:number)=>void;onRange:(r:TimeRange|null)=>void;onBegin:()=>void;onSearchCount:(n:number)=>void}
+interface Props {data:Recording;clips:Clip[];mode:ViewMode;query:string;follow:boolean;onFollowChange:(follow:boolean)=>void;onSeek:(t:number)=>void;onRange:(r:TimeRange|null)=>void;onSearchCount:(n:number)=>void}
 interface Occurrence {key:string;id:number;text:string;start:number;end:number;speaker:number;section:number;clipId:string}
-const Transcript= memo(forwardRef<TranscriptHandle,Props>(function Transcript({data,clips,mode,query,follow,onFollowChange,onSeek,onRange,onBegin,onSearchCount},ref){
+const Transcript= memo(forwardRef<TranscriptHandle,Props>(function Transcript({data,clips,mode,query,follow,onFollowChange,onSeek,onRange,onSearchCount},ref){
  const container=useRef<HTMLDivElement>(null),active=useRef<HTMLElement|null>(null),pointer=useRef(false),ignoreUntil=useRef(0),ignoreScrollUntil=useRef(0),userCaretUntil=useRef(0),lastTime=useRef(0),matchIndex=useRef(-1),followRef=useRef(follow);
  const onSeekRef=useRef(onSeek),onRangeRef=useRef(onRange),onFollowChangeRef=useRef(onFollowChange);useLayoutEffect(()=>{onSeekRef.current=onSeek;onRangeRef.current=onRange;onFollowChangeRef.current=onFollowChange;followRef.current=follow},[onSeek,onRange,onFollowChange,follow]);
  const model=useMemo(()=>{
@@ -87,11 +87,11 @@ const Transcript= memo(forwardRef<TranscriptHandle,Props>(function Transcript({d
   document.addEventListener('selectionchange',selectionChange);document.addEventListener('pointerup',up);
   return()=>{document.removeEventListener('selectionchange',selectionChange);document.removeEventListener('pointerup',up)};
  },[]);
- return <div ref={container} className="transcript-scroll editable-transcript" contentEditable suppressContentEditableWarning tabIndex={0} role="textbox" aria-label="Synchronized transcript. Select text to cut; move the caret to seek." aria-multiline="true" aria-readonly="true" lang="ru" spellCheck={false}
+ return <div ref={container} className="transcript-scroll editable-transcript" contentEditable suppressContentEditableWarning tabIndex={0} role="textbox" aria-label="Synchronized transcript. Select text to cut; move the caret to seek." aria-multiline="true" aria-readonly="true" lang={data.language} spellCheck={false}
   onBeforeInput={e=>e.preventDefault()} onPaste={e=>e.preventDefault()} onDrop={e=>e.preventDefault()} onDragStart={e=>e.preventDefault()}
   onWheel={stopFollowing} onTouchMove={stopFollowing} onScroll={()=>{if(performance.now()>ignoreScrollUntil.current)stopFollowing()}}
-  onPointerDown={()=>{pointer.current=true;ignoreUntil.current=0;onBegin()}}>
-  {!words.length&&<div className="empty-state" contentEditable={false}>Your edit is empty. Switch to Source to restore a range, or undo the last cut.</div>}
+  onPointerDown={()=>{pointer.current=true;ignoreUntil.current=0}}>
+  {!words.length&&<div className="empty-state" contentEditable={false}>{!data.words.length?'No timed transcript in this project. Use video and in/out marks to edit.':'Your edit is empty. Switch to Source to restore a range, or undo the last cut.'}</div>}
   {model.map(clip=><div key={clip.id} className="transcript-clip">
    {mode==='edit'&&<div className="transcript-chapter" contentEditable={false}><span>{clip.label}</span><span>{timecode(clip.offset)}</span></div>}
    {clip.rows.map(row=><div key={row.key} className="transcript-row">

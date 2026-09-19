@@ -19,7 +19,7 @@ export default memo(function Waveform({peaks,clips,mode,sourceDuration,time,rang
  onPointerMove={e=>{if(start.current&&Math.abs(e.clientX-start.current.x)>4)setDrag({start:start.current.time,end:position(e.clientX)})}}
  onPointerUp={e=>{if(!start.current)return;if(Math.abs(e.clientX-start.current.x)>4)onRange({start:Math.min(start.current.time,position(e.clientX)),end:Math.max(start.current.time,position(e.clientX))});else{onRange(null);onSeek(position(e.clientX))}start.current=null;setDrag(null)}}
  onPointerCancel={()=>{start.current=null;setDrag(null)}}>
- <svg viewBox="0 0 1080 60" preserveAspectRatio="none" aria-hidden="true">{bars.map((v,i)=><rect key={i} x={i*3} y={30-v*26} width="1.5" height={Math.max(2,v*52)} rx=".6" fill={i/360<=time/(total||1)?'#bdd6a3':'#53614e'}/>)}</svg>
+ <svg viewBox="0 0 1080 60" preserveAspectRatio="none" aria-hidden="true">{bars.map((v,i)=><rect key={i} x={i*3} y={30-v*26} width="1.5" height={Math.max(2,v*52)} rx=".6" fill={i/360<=time/(total||1)?'var(--ink)':'var(--slate)'}/>)}</svg>
  {selected&&<div className="wave-selection" style={{left:percent(Math.min(selected.start,selected.end))+'%',width:percent(Math.max(selected.start,selected.end))-percent(Math.min(selected.start,selected.end))+'%'}}/>}
  <div className="wave-playhead" style={{left:percent(time)+'%'}}/>
  </div><div className="wave-labels"><span>00:00:00</span><span>Drag waveform to select</span><span>{timecode(total)}</span></div></div>;

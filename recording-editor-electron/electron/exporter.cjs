@@ -32,7 +32,7 @@ const escapeMetadata=text=>String(text).replaceAll('\\','\\\\').replaceAll('=','
 function writeSidecars(folder,project,recording,plan){
  fs.mkdirSync(folder,{recursive:true});
  fs.writeFileSync(path.join(folder,'project.json'),JSON.stringify(project,null,2),'utf8');
- fs.writeFileSync(path.join(folder,'edit-list.json'),JSON.stringify({title:recording.title,source:'video.mp4',timestampBasis:'original source seconds',fps:FPS,clips:plan},null,2),'utf8');
+ fs.writeFileSync(path.join(folder,'edit-list.json'),JSON.stringify({title:recording.title,source:recording.source,timestampBasis:'original source seconds',fps:FPS,clips:plan},null,2),'utf8');
  fs.writeFileSync(path.join(folder,'cut-report.md'),cutReport(project.clips,recording),'utf8');
  const metadata=[';FFMETADATA1',`title=${escapeMetadata(recording.title)}`],transcript=['Edited transcript · source and edit timestamps',''],srt=[];let cue=1;
  for(const clip of plan){
@@ -62,11 +62,11 @@ async function renderEdit({source,folder,project,recording,burn=true,height=1080
   const clip=plan[index],length=clip.renderDuration,part=path.join(parts,`${String(index).padStart(5,'0')}.mkv`);update({status:'rendering',message:`Rendering clip ${index+1} of ${plan.length}`,progress:done/total*.95});
   let videoFilter=`scale=-2:${height},fps=${FPS},tpad=stop_mode=clone:stop_duration=0.1,trim=duration=${length.toFixed(9)},setpts=PTS-STARTPTS`;if(burn)videoFilter+=','+timestampFilter(clip.start);
   const audioFilter=`asetpts=PTS-STARTPTS,apad,atrim=duration=${length.toFixed(9)}`;
-  const args=['-hide_banner','-loglevel','error','-nostdin','-y','-ss',String(clip.start),'-i',source,'-t',length.toFixed(9),'-map','0:v:0','-map','0:a:0','-vf',videoFilter,'-af',audioFilter,'-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','pcm_s16le','-ar','48000','-ac','2','-progress','pipe:1',part];
+  const args=['-hide_banner','-loglevel','error','-nostdin','-y','-ss',String(clip.start),'-i',source,'-t',length.toFixed(9),'-map','0:v:0','-map','0:a:0?','-vf',videoFilter,'-af',audioFilter,'-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','pcm_s16le','-ar','48000','-ac','2','-progress','pipe:1',part];
   await runProcess(args,job,value=>update({progress:(done+length*value)/total*.95}),length);concat.push(`file 'parts/${path.basename(part)}'`,`duration ${length.toFixed(9)}`);done+=length;
  }
  fs.writeFileSync(path.join(folder,'concat.txt'),concat.join('\n')+'\n','utf8');update({status:'rendering',message:'Joining clips and writing the MP4',progress:.95});const partial=path.join(folder,'edited-video.partial.mp4');
- await runProcess(['-hide_banner','-loglevel','error','-nostdin','-y','-f','concat','-safe','1','-i',path.join(folder,'concat.txt'),'-i',path.join(folder,'chapters.ffmetadata'),'-map','0:v:0','-map','0:a:0','-map_metadata','1','-map_chapters','1','-c:v','copy','-c:a','aac','-b:a','192k','-t',String(total),'-movflags','+faststart','-progress','pipe:1',partial],job,value=>update({progress:.95+.049*value}),total);
+ await runProcess(['-hide_banner','-loglevel','error','-nostdin','-y','-f','concat','-safe','1','-i',path.join(folder,'concat.txt'),'-i',path.join(folder,'chapters.ffmetadata'),'-map','0:v:0','-map','0:a:0?','-map_metadata','1','-map_chapters','1','-c:v','copy','-c:a','aac','-b:a','192k','-t',String(total),'-movflags','+faststart','-progress','pipe:1',partial],job,value=>update({progress:.95+.049*value}),total);
  fs.renameSync(partial,path.join(folder,'edited-video.mp4'));fs.rmSync(parts,{recursive:true,force:true});update({status:'done',message:'Export ready',progress:1,duration:total});
 }
 

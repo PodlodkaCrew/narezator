@@ -3,7 +3,12 @@ const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('cutroom',{
  mediaUrl:'cutroom-media://video/source',
  captionsUrl:'cutroom-media://captions/source',
- chooseWorkspace:()=>ipcRenderer.invoke('workspace:choose'),
+ workspaceInfo:()=>ipcRenderer.invoke('workspace:info'),
+ pickProjectFile:kind=>ipcRenderer.invoke('workspace:pick',kind),
+ newWorkspace:options=>ipcRenderer.invoke('workspace:new',options),
+ importWebProject:()=>ipcRenderer.invoke('workspace:importWeb'),
+ openWorkspace:file=>ipcRenderer.invoke('workspace:open',file),
+ closeWorkspace:()=>ipcRenderer.invoke('workspace:close'),
  loadRecording:()=>ipcRenderer.invoke('recording:load'),
  loadWaveform:()=>ipcRenderer.invoke('waveform:load'),
  mediaInfo:()=>ipcRenderer.invoke('media:info'),

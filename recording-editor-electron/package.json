@@ -10,6 +10,8 @@
     "build": "tsc --noEmit && vite build",
     "start": "npm run build && electron .",
     "test": "node --experimental-strip-types --test tests/*.test.*",
+    "test:projects": "npm run build && electron tests/projects.electron.cjs",
+    "test:seek": "npm run build && electron tests/seek.electron.cjs",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },

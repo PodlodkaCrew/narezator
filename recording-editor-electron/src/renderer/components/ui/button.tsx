@@ -4,21 +4,16 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[4px] border-2 border-[#171717] text-sm font-bold text-[#171717] outline-none transition-[transform,box-shadow,background-color] select-none focus-visible:ring-2 focus-visible:ring-[#171717] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[4px] border border-transparent text-[12px] font-normal uppercase leading-none text-[var(--ink)] outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-[var(--ink)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default:
-          'bg-[#c7f464] shadow-[3px_3px_0_#171717] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_#171717] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none',
-        outline:
-          'bg-[#fffdf7] shadow-[3px_3px_0_#171717] hover:bg-[#ffd84d] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_#171717] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none',
-        secondary:
-          'bg-[#6ee7f9] shadow-[3px_3px_0_#171717] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_#171717] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none',
-        ghost:
-          'border-transparent bg-transparent shadow-none hover:border-[#171717] hover:bg-[#fffdf7]',
-        destructive:
-          'bg-[#ff6b6b] shadow-[3px_3px_0_#171717] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_#171717] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none',
-        link: 'text-primary underline-offset-4 hover:underline',
+        default: 'button-primary bg-[var(--yellow)] hover:bg-[var(--peach)]',
+        outline: 'button-outline border-[var(--border)] bg-[var(--cream)] hover:bg-[var(--yellow)]',
+        secondary: 'button-secondary bg-[var(--blue)] hover:bg-[var(--green)]',
+        ghost: 'button-ghost bg-transparent hover:bg-[var(--yellow)]',
+        destructive: 'button-destructive bg-[var(--peach)] hover:bg-[var(--yellow)]',
+        link: 'underline-offset-4 hover:underline',
       },
       size: {
         default:
