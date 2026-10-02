@@ -1,4 +1,4 @@
-const {app,BrowserWindow,dialog,ipcMain,protocol,shell}=require('electron');
+const {app,BrowserWindow,dialog,ipcMain,protocol,shell,safeStorage}=require('electron');
 const fs=require('node:fs');
 const path=require('node:path');
 const {mediaResponse}=require('./media-response.cjs');
@@ -6,16 +6,20 @@ const crypto=require('node:crypto');
 const {ProjectStore,atomicJson,validateProject}=require('./project-store.cjs');
 const {renderEdit}=require('./exporter.cjs');
 const {createReelsFolder,renderReels}=require('./reels-export.cjs');
-const {importRecording,probeVideo}=require('./recording-import.cjs');
-const {importWebProject}=require('./web-project-import.cjs');
+const {probeVideo}=require('./recording-import.cjs');
 const {profileDirectory}=require('./app-profile.cjs');
+const {TranscriptionCredentials}=require('./transcription-credentials.cjs');
+const {TranscriptionManager}=require('./transcription.cjs');
+const {newWorkspace}=require('./new-workspace.cjs');
+const {ChapterSummaries}=require('./chapter-summaries.cjs');
+const {ChapterGeneration}=require('./chapter-generation.cjs');
 
 protocol.registerSchemesAsPrivileged([{scheme:'narezator-media',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 app.setName('Narezator');
 const userData=profileDirectory(app.getPath('appData'));fs.mkdirSync(userData,{recursive:true});app.setPath('userData',userData);
 if(!app.requestSingleInstanceLock()){app.quit();return}
 
-let window,store;const jobs=new Map();
+let window,store,credentials,transcriptions,chapterSummaries,chapterGeneration;const jobs=new Map();
 const publicJob=job=>Object.fromEntries(Object.entries(job).filter(([key])=>!['process','cancelled','folder'].includes(key)));
 const exportRoot=()=>path.join(app.getPath('userData'),'exports');
 function updateJob(job,fields){Object.assign(job,fields);atomicJson(path.join(job.folder,'status.json'),publicJob(job))}
@@ -40,18 +44,27 @@ async function openWorkspace(file){
  }
  store.open(file,replacement);return {cancelled:false};
 }
-async function newWorkspace(options){
- const recording=await importRecording(options);
- let project;
- if(options.editsPath){const raw=JSON.parse(fs.readFileSync(options.editsPath,'utf8'));project=validateProject(raw.project||raw,recording)}
- const result=await dialog.showSaveDialog(window,{title:'Save new Narezator project',defaultPath:recording.title+'.narezator',filters:[{name:'Narezator project',extensions:['narezator']}]});if(result.canceled||!result.filePath)return {cancelled:true};
- store.create({manifestPath:result.filePath,videoPath:options.videoPath,recording,project});return {cancelled:false};
-}
 function registerIpc(){
  ipcMain.handle('workspace:info',()=>store.info());
  ipcMain.handle('workspace:pick',(_event,kind)=>pickFile(kind));
- ipcMain.handle('workspace:new',(_event,options)=>newWorkspace(options));
- ipcMain.handle('workspace:importWeb',()=>importWebProject({store,dialog,window}));
+ ipcMain.handle('workspace:new',(_event,options)=>newWorkspace({options,store,credentials,transcriptions,dialog,window}));
+ ipcMain.handle('transcription:credentials',()=>credentials.status());
+ ipcMain.handle('transcription:saveKey',(_event,payload)=>credentials.save(payload));
+ ipcMain.handle('transcription:status',()=>transcriptions.status(store.readConfig()));
+ ipcMain.handle('transcription:retry',(_event,{provider})=>transcriptions.start(workspace().config,provider));
+ ipcMain.handle('transcription:cancel',()=>transcriptions.cancel(workspace().config));
+ ipcMain.handle('chapters:summary',(_event,{projectId,chapterId})=>{
+  if(projectId!==store.identity())throw Error('The active project changed. Open the chapter in the current project.');
+  return chapterSummaries.generate({...workspace(),chapterId});
+ });
+ ipcMain.handle('chapters:cached',(_event,{projectId})=>{
+  if(projectId!==store.identity())throw Error('The active project changed.');
+  const {config,recording}=workspace();return chapterGeneration.cached(config,recording);
+ });
+ ipcMain.handle('chapters:generate',(_event,{projectId})=>{
+  if(projectId!==store.identity())throw Error('The active project changed.');
+  return chapterGeneration.generate(workspace());
+ });
  ipcMain.handle('workspace:open',(_event,file)=>openWorkspace(file));
  ipcMain.handle('workspace:close',()=>{store.close();return {cancelled:false}});
  ipcMain.handle('recording:load',()=>workspace().recording);
@@ -92,8 +105,9 @@ function createWindow(){
 }
 
 app.whenReady().then(()=>{
- const legacyRoot=process.env.NAREZATOR_LEGACY_ROOT||process.env.CUTROOM_LEGACY_ROOT;store=new ProjectStore({userData:app.getPath('userData'),resourcesPath:app.isPackaged?process.resourcesPath:path.join(__dirname,'..','public'),legacyRoot});store.initialize();loadJobs();
+ const legacyRoot=process.env.NAREZATOR_LEGACY_ROOT||process.env.CUTROOM_LEGACY_ROOT;store=new ProjectStore({userData:app.getPath('userData'),resourcesPath:app.isPackaged?process.resourcesPath:path.join(__dirname,'..','public'),legacyRoot});store.initialize();loadJobs();credentials=new TranscriptionCredentials({userData:app.getPath('userData'),safeStorage});transcriptions=new TranscriptionManager({credentials});chapterSummaries=new ChapterSummaries({credentials});chapterGeneration=new ChapterGeneration({credentials});
  protocol.handle('narezator-media',request=>mediaResponse(request,mediaFile(new URL(request.url).hostname)));
  registerIpc();createWindow();app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createWindow()});
 });
 app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit()});
+app.on('before-quit',()=>{transcriptions?.cancelAll();chapterSummaries?.cancelAll();chapterGeneration?.cancelAll()});

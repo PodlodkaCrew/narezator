@@ -16,6 +16,8 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));let report;
 app.whenReady().then(async()=>{
  let win;const deadline=setTimeout(()=>{console.error('Annotation UI timed out');app.exit(1)},60000);
  try{
+  ipcMain.handle('transcription:status',()=>null);
+  ipcMain.handle('transcription:credentials',()=>({elevenlabs:{configured:true,storage:'session'},openai:{configured:false,storage:null}}));
   protocol.handle('narezator-media',r=>new URL(r.url).hostname==='video'?mediaResponse(r,videoPath):new Response('WEBVTT\n',{headers:{'Content-Type':'text/vtt'}}));
   ipcMain.handle('workspace:info',()=>store.info());ipcMain.handle('recording:load',()=>store.load().recording);
   ipcMain.handle('project:load',()=>({project:store.load().project,revision:store.load().project.revision,projectId:store.identity()}));

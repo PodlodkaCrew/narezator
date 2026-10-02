@@ -4,7 +4,6 @@ const {ProjectStore,initialProject}=require('../electron/project-store.cjs');
 const {mediaResponse}=require('../electron/media-response.cjs');
 const {ffmpegPath}=require('../electron/exporter.cjs');
 const {importRecording}=require('../electron/recording-import.cjs');
-const {importWebProject}=require('../electron/web-project-import.cjs');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'narezator-project-ui-'));app.setPath('userData',path.join(root,'profile'));
 protocol.registerSchemesAsPrivileged([{scheme:'narezator-media',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 const video=path.join(root,'sample.mp4');const generated=spawnSync(ffmpegPath,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','testsrc2=s=160x90:r=30:d=4','-c:v','libx264',video]);if(generated.status!==0)throw Error(String(generated.stderr));
@@ -15,6 +14,9 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));let inFlight=false,
 app.whenReady().then(async()=>{
  let window;const deadline=setTimeout(()=>{console.error('Project UI test timed out');app.exit(1)},45000);
  try{
+  ipcMain.handle('transcription:status',()=>null);
+  ipcMain.handle('transcription:credentials',()=>({elevenlabs:{configured:true,storage:'session'},openai:{configured:false,storage:null}}));
+  ipcMain.handle('chapters:cached',()=>null);
   protocol.handle('narezator-media',req=>new URL(req.url).hostname==='video'?mediaResponse(req,store.readConfig()?.videoPath):new Response('WEBVTT\n',{headers:{'Content-Type':'text/vtt'}}));
   ipcMain.handle('workspace:info',()=>store.info());ipcMain.handle('recording:load',()=>store.load().recording);
   ipcMain.handle('project:load',()=>{const {project}=store.load();return {project,revision:project.revision,projectId:store.identity()}});
@@ -24,10 +26,6 @@ app.whenReady().then(async()=>{
   ipcMain.handle('workspace:open',(_,file)=>{store.open(file||original.manifestPath);return {cancelled:false}});
   ipcMain.handle('workspace:pick',()=>video);
   ipcMain.handle('workspace:new',async(_,options)=>{const recording=await importRecording(options);store.create({manifestPath:path.join(root,'new.narezator'),videoPath:video,recording});return {cancelled:false}});
-  const webDir=path.join(root,'web'),metadataDir=path.join(webDir,'recording-editor','public');fs.mkdirSync(metadataDir,{recursive:true});fs.mkdirSync(path.join(webDir,'edits'));
-  fs.copyFileSync(video,path.join(webDir,'sample.mp4'));fs.writeFileSync(path.join(metadataDir,'recording.json'),JSON.stringify({...recording,title:'Imported browser project'}));
-  const webEdits=path.join(webDir,'edits','recording.edits.json');fs.writeFileSync(webEdits,JSON.stringify(project));const webBytes=fs.readFileSync(webEdits);
-  ipcMain.handle('workspace:importWeb',()=>importWebProject({store,dialog:{showOpenDialog:async()=>({canceled:false,filePaths:[webEdits]}),showSaveDialog:async()=>({canceled:false,filePath:path.join(root,'imported.narezator')})}}));
   window=new BrowserWindow({show:false,webPreferences:{preload:path.join(__dirname,'../electron/preload.cjs'),contextIsolation:true,sandbox:true,backgroundThrottling:false}});
   const evaluate=code=>window.webContents.executeJavaScript(code).catch(error=>{throw Error(code+'\n'+error.message)});
   async function until(code){for(let i=0;i<200;i++){try{if(await evaluate(code))return}catch{}await delay(50)}throw Error('UI condition failed: '+code)}
@@ -36,6 +34,8 @@ app.whenReady().then(async()=>{
   await until("document.querySelector('video')?.readyState>=2");
   assert.equal(await evaluate("document.title"),'Narezator');
   assert.equal(await evaluate("document.querySelector('.brand-wordmark').textContent"),'Narezator');
+  assert.equal(await evaluate("[...document.querySelectorAll('.project-menu button')].some(b=>b.textContent.includes('Import Web Project'))"),false);
+  assert.equal(await evaluate("'importWebProject' in window.narezator"),false);
   window.setSize(980,700);await evaluate('document.fonts.ready');await delay(100);
   assert.equal(await evaluate("[...document.querySelectorAll('.app-header > *')].every(el=>el.getBoundingClientRect().right<=innerWidth)"),true,'Branded header fits minimum window width');
   // Start an edit, then close immediately while the IPC save is still in flight.
@@ -46,8 +46,8 @@ app.whenReady().then(async()=>{
   assert.equal(store.info().active,false);assert.equal(saveCount,1);
   await click('Original project');await until("document.querySelector('video')?.readyState>=2");
   assert.equal(store.load().project.reels[0].title,'Saved reel');assert.equal(store.load().project.events.length,1);
-  await click('New Project');await until("document.querySelector('[role=dialog]')");
-  await click('Choose…');await until("document.querySelector('[role=dialog] input')?.value==='sample'");
+  await click('New Project');await until("document.querySelector('[role=dialog]')");await until("[...document.querySelectorAll('button')].some(b=>b.textContent==='Choose…'&&!b.disabled)");
+  await click('Choose…');await until("[...document.querySelectorAll('[role=dialog] input')].some(input=>input.value==='sample')");
   await click('Create project…');await until("document.querySelector('.project-name')?.textContent==='sample'");
   assert.equal(store.load().recording.words.length,0);assert.equal(store.load().project.reels.length,0);
   await until("document.body.innerText.includes('No timed transcript')");
@@ -56,11 +56,10 @@ app.whenReady().then(async()=>{
   await click('Original project');await until("document.querySelector('.project-name')?.textContent==='Original project'");
   assert.equal(store.load().project.events.length,1);assert.equal(store.load().project.reels.length,1);
   await click('Close Project');await until("document.body.innerText.includes('Narezator projects')");
-  await click('Import Web Project…');await until("document.querySelector('.project-name')?.textContent==='Imported browser project'");
-  assert.deepEqual(store.load().project,project);assert.deepEqual(fs.readFileSync(webEdits),webBytes);
-  await click('Original project');await until("document.querySelector('.project-name')?.textContent==='Original project'");
+  assert.equal(await evaluate("[...document.querySelectorAll('.project-actions button')].some(b=>b.textContent.includes('Import Web Project'))"),false);
+  await click('Open Project…');await until("document.querySelector('.project-name')?.textContent==='Original project'");
   assert.equal(store.load().project.events.length,1);assert.equal(store.load().project.reels.length,1);
-  console.log('Project UI passed: pending save, close, recent reopen, create, import web project, return with edits and reels.');
+  console.log('Project UI passed: pending save, close, recent reopen, create, open, return with edits and reels, and removed web import controls.');
   clearTimeout(deadline);window.destroy();app.exit(0);
  }catch(error){console.error(error);clearTimeout(deadline);window?.destroy();app.exit(1)}
 });

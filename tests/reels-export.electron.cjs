@@ -11,6 +11,8 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));let calls=0,payload,job=null,re
 app.whenReady().then(async()=>{
  const deadline=setTimeout(()=>{console.error('Reels export UI timed out');app.exit(1)},45000);
  try{
+  ipcMain.handle('transcription:status',()=>null);
+  ipcMain.handle('transcription:credentials',()=>({elevenlabs:{configured:true,storage:'session'},openai:{configured:false,storage:null}}));
   ipcMain.handle('workspace:info',()=>({active:true,projectId:'test',title:data.title,recent:[]}));ipcMain.handle('recording:load',()=>data);ipcMain.handle('project:load',()=>({project,revision:0,projectId:'test'}));
   ipcMain.handle('waveform:load',()=>({peaks:[]}));ipcMain.handle('media:info',()=>({burnedIn:false}));ipcMain.handle('exports:list',()=>({jobs:[]}));
   ipcMain.handle('exports:reels',(_,p)=>{payload=p;if(++calls===1)return null;return job={id:'batch',kind:'reels',status:'rendering',progress:.25,message:'Reel 1 of 2: First reel',completed:0,total:2,outputFolder:path.join(root,'exports')}});

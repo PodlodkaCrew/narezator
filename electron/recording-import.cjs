@@ -3,6 +3,7 @@ const path=require('node:path');
 const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {ffmpegPath}=require('./exporter.cjs');
+const {validSummary}=require('./chapter-summaries.cjs');
 const run=promisify(execFile);
 const time=value=>String(value).replace(',','.').split(':').reduce((n,part)=>n*60+Number(part),0);
 
@@ -21,7 +22,7 @@ function normalizeRecording(value){
  for(const word of value.words){if(!word||!Number.isFinite(word.start)||!Number.isFinite(word.end)||word.start<0||word.end<word.start||word.end>value.duration+.1||typeof word.text!=='string'||!Number.isInteger(word.id)||ids.has(word.id))throw Error('Invalid transcript word timing.');ids.add(word.id)}
  value.words.sort((a,b)=>a.start-b.start||a.id-b.id);
  const chapterIds=new Set();
- for(const c of value.chapters){if(!c||typeof c.id!=='string'||chapterIds.has(c.id)||typeof c.title!=='string'||typeof c.question!=='string'||typeof c.note!=='string'||typeof c.evidence!=='string'||!Number.isInteger(c.number)||!['direct','covered','missing','manual'].includes(c.kind)||!(c.start===null||(Number.isFinite(c.start)&&c.start>=0&&c.start<value.duration)))throw Error('Invalid chapter metadata.');chapterIds.add(c.id)}
+ for(const c of value.chapters){if(!c||typeof c.id!=='string'||chapterIds.has(c.id)||typeof c.title!=='string'||typeof c.question!=='string'||typeof c.note!=='string'||typeof c.evidence!=='string'||!Number.isInteger(c.number)||!['direct','covered','missing','manual'].includes(c.kind)||!(c.start===null||(Number.isFinite(c.start)&&c.start>=0&&c.start<value.duration))||(c.summary!==undefined&&!validSummary(c.summary,value.duration)))throw Error('Invalid chapter metadata.');chapterIds.add(c.id)}
  return {...value,language:value.language||'und',fps:value.fps||30,width:value.width||0,height:value.height||0,priorCuts:value.priorCuts||[],initialClips:value.initialClips||[{id:'source',start:0,end:value.duration,label:value.title}]};
 }
 function readTranscript(file){

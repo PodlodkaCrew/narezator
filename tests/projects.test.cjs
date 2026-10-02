@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const os=require('node:os');
-const {ProjectStore,initialProject}=require('../electron/project-store.cjs');
+const {ProjectStore,initialProject,validateProject}=require('../electron/project-store.cjs');
 const {readTranscript,readChapters,importRecording}=require('../electron/recording-import.cjs');
 const {ffmpegPath}=require('../electron/exporter.cjs');
 const {spawnSync}=require('node:child_process');
@@ -56,5 +56,18 @@ void test('a fresh standalone install needs no bundled recording or legacy direc
   const store=new ProjectStore({userData:dir,resourcesPath:path.join(dir,'empty-resources')});
   assert.equal(store.initialize(),null);assert.equal(store.info().active,false);assert.deepEqual(store.recent(),[]);
   assert.throws(()=>store.load(),error=>error.code==='NO_WORKSPACE');
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
+
+void test('New Project retains full precision and word IDs from recording metadata',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'narezator-metadata-'));
+ try{
+  const videoPath=path.join(dir,'video.mp4'),recordingPath=path.join(dir,'recording.json');
+  const generated=spawnSync(ffmpegPath,['-hide_banner','-loglevel','error','-f','lavfi','-i','color=s=160x90:r=30','-frames:v','91','-c:v','libx264',videoPath]);assert.equal(generated.status,0,String(generated.stderr));
+  const metadata={title:'Interview',source:'video.mp4',duration:91/30,language:'en',words:[{id:42,start:.1,end:.5,text:'Hello',speaker:2,section:0}],chapters:[]};
+  fs.writeFileSync(recordingPath,JSON.stringify(metadata));
+  const recording=await importRecording({videoPath,transcriptPath:recordingPath});
+  assert.equal(recording.duration,91/30);assert.equal(recording.words[0].id,42);
+  assert.doesNotThrow(()=>validateProject(initialProject(recording),recording));
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });

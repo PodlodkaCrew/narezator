@@ -2,6 +2,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {randomUUID}=require('node:crypto');
 const {normalizeRecording}=require('./recording-import.cjs');
+const {validSummary}=require('./chapter-summaries.cjs');
 
 const EPSILON=.00001;
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
@@ -22,12 +23,13 @@ function validateProject(project,recording){
   for(const event of value)if(!event||!['id','at','type','label'].every(key=>typeof event[key]==='string'))throw Error('Invalid edit event.');
  };
  const chapters=value=>{
-  if(!Array.isArray(value)||value.length!==recording.chapters.length)throw Error('Invalid chapters.');
+  if(!Array.isArray(value)||value.length>2000)throw Error('Invalid chapters.');
   const expected=new Set(recording.chapters.map(chapter=>chapter.id)),seen=new Set();
   for(const chapter of value){
-   if(!chapter||!expected.has(chapter.id)||seen.has(chapter.id)||typeof chapter.title!=='string'||typeof chapter.question!=='string'||!(chapter.start===null||(finite(chapter.start)&&chapter.start>=0&&chapter.start<recording.duration)))throw Error('Invalid chapter.');
+   if(!chapter||typeof chapter.id!=='string'||!chapter.id||seen.has(chapter.id)||typeof chapter.title!=='string'||typeof chapter.question!=='string'||typeof chapter.note!=='string'||typeof chapter.evidence!=='string'||!Number.isInteger(chapter.number)||!['direct','covered','missing','manual'].includes(chapter.kind)||!(chapter.start===null||(finite(chapter.start)&&chapter.start>=0&&chapter.start<recording.duration))||(chapter.summary!==undefined&&!validSummary(chapter.summary,recording.duration)))throw Error('Invalid chapter.');
    seen.add(chapter.id);
   }
+  if([...expected].some(id=>!seen.has(id)))throw Error('An imported chapter is missing from this project.');
  };
  const snapshot=value=>{if(!value||typeof value!=='object')throw Error('Invalid project snapshot.');clips(value.clips);chapters(value.chapters)};
  snapshot(project);events(project.events);
@@ -126,7 +128,7 @@ class ProjectStore{
  inspect(manifestPath){
   manifestPath=path.resolve(manifestPath);
   const raw=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
-  if(!['narezator','cutroom'].includes(raw.format)||raw.version!==1||typeof raw.id!=='string')throw Error('Choose a .narezator or legacy .cutroom project file. To transfer browser edits, use Import Web Project.');
+  if(!['narezator','cutroom'].includes(raw.format)||raw.version!==1||typeof raw.id!=='string')throw Error('Choose a .narezator or legacy .cutroom project file.');
   const config={...raw,manifestPath};
   for(const key of ['videoPath','recordingPath','projectPath']){if(typeof raw[key]!=='string'||!raw[key])throw Error('Invalid project file.');config[key]=path.resolve(path.dirname(manifestPath),raw[key])}
   for(const key of ['waveformPath','captionsPath'])if(raw[key])config[key]=path.resolve(path.dirname(manifestPath),raw[key]);
