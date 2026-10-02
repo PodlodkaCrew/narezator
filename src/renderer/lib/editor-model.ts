@@ -1,5 +1,7 @@
 export interface Word { id:number; text:string; start:number; end:number; speaker:number; section:number }
-export interface Chapter { id:string; number:number; title:string; question:string; start:number|null; end:number|null; kind:'direct'|'covered'|'missing'|'manual'; note:string; evidence:string }
+import {validSummary} from './chapter-summary.ts';
+export interface ChapterSummary { flow:string; insights:string[]; range?:TimeRange }
+export interface Chapter { id:string; number:number; title:string; question:string; start:number|null; end:number|null; kind:'direct'|'covered'|'missing'|'manual'; note:string; evidence:string; summary?:ChapterSummary }
 export interface Clip { id:string; start:number; end:number; label:string; chapterId?:string }
 export interface Recording { title:string; source:string; duration:number; fps:number; width:number; height:number; language:string; words:Word[]; chapters:Chapter[]; initialClips:Clip[]; priorCuts:{start:number;end:number;reason:string}[] }
 export interface Snapshot { clips:Clip[]; chapters:Chapter[] }
@@ -222,10 +224,11 @@ export function validateProject(value:unknown,data:Recording):Project {
   for(const e of events)if(typeof e.id!=='string'||typeof e.at!=='string'||typeof e.label!=='string'||typeof e.type!=='string')throw Error('Invalid history entry.');
  };
  const check=(snapshot:Snapshot)=>{
-  if(!snapshot||!Array.isArray(snapshot.clips)||snapshot.clips.length>2000||!Array.isArray(snapshot.chapters)||snapshot.chapters.length!==data.chapters.length)throw Error('Invalid project contents.');
+  if(!snapshot||!Array.isArray(snapshot.clips)||snapshot.clips.length>2000||!Array.isArray(snapshot.chapters)||snapshot.chapters.length>2000)throw Error('Invalid project contents.');
   checkClips(snapshot.clips);
   const chapters=new Set<string>();
-  for(const c of snapshot.chapters){if(typeof c.title!=='string'||typeof c.question!=='string'||typeof c.note!=='string'||typeof c.evidence!=='string'||!Number.isInteger(c.number)||!['direct','covered','missing','manual'].includes(c.kind))throw Error('Invalid chapter details.');if(!data.chapters.some(d=>d.id===c.id)||chapters.has(c.id)||!(c.start===null||(Number.isFinite(c.start)&&c.start>=0&&c.start<data.duration)))throw Error('Invalid chapter marker.');chapters.add(c.id)}
+  for(const c of snapshot.chapters){if(!c||typeof c.title!=='string'||typeof c.question!=='string'||typeof c.note!=='string'||typeof c.evidence!=='string'||!Number.isInteger(c.number)||!['direct','covered','missing','manual'].includes(c.kind)||(c.summary!==undefined&&!validSummary(c.summary,data.duration)))throw Error('Invalid chapter details.');if(typeof c.id!=='string'||!c.id||chapters.has(c.id)||!(c.start===null||(Number.isFinite(c.start)&&c.start>=0&&c.start<data.duration)))throw Error('Invalid chapter marker.');chapters.add(c.id)}
+  if(data.chapters.some(c=>!chapters.has(c.id)))throw Error('An imported chapter is missing from this project.');
  };
  check(p);
  if(!Array.isArray(p.events)||!Array.isArray(p.undo)||!Array.isArray(p.redo)||p.undo.length>75||p.redo.length>75)throw Error('Invalid edit history.');

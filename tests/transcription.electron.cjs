@@ -1,0 +1,56 @@
+const {app,BrowserWindow,ipcMain,protocol,safeStorage}=require('electron');
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
+const {spawnSync}=require('node:child_process');
+const {ProjectStore}=require('../electron/project-store.cjs');
+const {TranscriptionCredentials}=require('../electron/transcription-credentials.cjs');
+const {TranscriptionManager}=require('../electron/transcription.cjs');
+const {ChapterGeneration,chaptersFromOutline}=require('../electron/chapter-generation.cjs');
+const {newWorkspace}=require('../electron/new-workspace.cjs');
+const {mediaResponse}=require('../electron/media-response.cjs');
+const {ffmpegPath}=require('../electron/exporter.cjs');
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'narezator-transcription-ui-'));app.setPath('userData',path.join(root,'profile'));
+protocol.registerSchemesAsPrivileged([{scheme:'narezator-media',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
+const video=path.join(root,'test.mp4');const generated=spawnSync(ffmpegPath,['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=s=160x90:r=30:d=4','-f','lavfi','-i','sine=frequency=440:duration=4','-shortest','-c:v','libx264','-c:a','aac',video]);assert.equal(generated.status,0,String(generated.stderr));
+const store=new ProjectStore({userData:path.join(root,'profile'),resourcesPath:root});const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));let win,release,requestProvider;
+app.whenReady().then(async()=>{
+ const deadline=setTimeout(()=>{console.error('Transcription UI timed out');app.exit(1)},60000);
+ try{
+  const credentials=new TranscriptionCredentials({userData:path.join(root,'profile'),safeStorage});
+  const manager=new TranscriptionManager({credentials,request:({provider,signal})=>new Promise((resolve,reject)=>{requestProvider=provider;release=resolve;signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true})})});
+  let chapterRequests=0;
+  const generation=new ChapterGeneration({credentials,request:async({recording})=>{chapterRequests++;return chaptersFromOutline({chapters:[{title:'Discussion',startWordId:recording.words[0].id,flow:'The discussion moves from its opening point to a second point.',insights:['The opening point introduces the topic.','The second point develops the discussion.']}]},recording)}});
+  protocol.handle('narezator-media',r=>new URL(r.url).hostname==='video'?mediaResponse(r,store.readConfig()?.videoPath):new Response('WEBVTT\n',{headers:{'Content-Type':'text/vtt'}}));
+  ipcMain.handle('workspace:info',()=>store.info());ipcMain.handle('recording:load',()=>store.load().recording);ipcMain.handle('workspace:pick',()=>video);
+  ipcMain.handle('workspace:new',(_,options)=>newWorkspace({options,store,credentials,transcriptions:manager,dialog:{showSaveDialog:async()=>({canceled:false,filePath:path.join(root,'auto.narezator')})}}));
+  ipcMain.handle('project:load',()=>({project:store.load().project,revision:store.load().project.revision,projectId:store.identity()}));ipcMain.handle('project:save',(_,{project,baseRevision,projectId})=>store.save(project,baseRevision,projectId));
+  ipcMain.handle('waveform:load',()=>({peaks:[]}));ipcMain.handle('media:info',()=>({burnedIn:false}));ipcMain.handle('exports:list',()=>({jobs:[]}));
+  ipcMain.handle('transcription:credentials',()=>credentials.status());ipcMain.handle('transcription:saveKey',(_,payload)=>credentials.save(payload));ipcMain.handle('transcription:status',()=>manager.status(store.readConfig()));ipcMain.handle('transcription:retry',(_,{provider})=>manager.start(store.readConfig(),provider));ipcMain.handle('transcription:cancel',()=>manager.cancel(store.readConfig()));
+  ipcMain.handle('chapters:cached',(_,{projectId})=>{assert.equal(projectId,store.identity());const {config,recording}=store.load();return generation.cached(config,recording)});
+  ipcMain.handle('chapters:generate',(_,{projectId})=>{assert.equal(projectId,store.identity());return generation.generate(store.load())});
+  win=new BrowserWindow({show:false,width:1500,height:980,webPreferences:{preload:path.join(__dirname,'../electron/preload.cjs'),sandbox:true,contextIsolation:true,backgroundThrottling:false}});
+  const run=code=>win.webContents.executeJavaScript(code);
+  async function until(code){for(let i=0;i<300;i++){if(await run(code))return;await delay(30)}throw Error('UI condition failed: '+code+'\n'+await run('document.body.innerText'))}
+  const click=label=>run(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b||b.disabled)throw Error('Missing/disabled '+${JSON.stringify(label)});b.click()})()`);
+  const setKey=()=>run(`(()=>{const el=document.querySelector('[aria-label="Transcription API key"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'test-only-ui-key');el.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  await win.loadFile(path.join(__dirname,'../dist/renderer/index.html'));await until("document.body.innerText.includes('Narezator projects')");await click('New Project');await until("!!document.querySelector('[role=dialog]')");
+  assert.equal(await run("[...document.querySelectorAll('button')].find(b=>b.textContent==='Choose…').disabled"),true);
+  assert.equal(await run("[...document.querySelectorAll('button')].find(b=>b.textContent==='Create project…').disabled"),true);
+  await run('document.fonts.ready');await delay(300);
+  fs.writeFileSync(path.join(os.tmpdir(),'narezator-new-project.png'),(await win.webContents.capturePage()).toPNG());
+  await setKey();await click('Save key');await until("[...document.querySelectorAll('button')].some(b=>b.textContent==='Choose…'&&!b.disabled)");assert.equal(await run("document.querySelector('[aria-label=\"Transcription API key\"]').value"),'');
+  await click('Choose…');await until("[...document.querySelectorAll('input')].some(i=>i.value==='test')");await click('Create project…');await until("document.querySelector('.transcription-progress')?.textContent.includes('Transcribing')");
+  assert.equal(requestProvider,'elevenlabs');assert.equal(await run("!!document.querySelector('.transcript-panel .transcription-progress progress')"),true);
+  win.setSize(980,700);await delay(150);assert.equal(await run("document.querySelector('.transcription-progress').getBoundingClientRect().right<=innerWidth"),true);
+  fs.writeFileSync(path.join(os.tmpdir(),'narezator-transcription-progress.png'),(await win.webContents.capturePage()).toPNG());
+  await click('Cancel transcription');await until("document.querySelector('.transcription-progress')?.textContent.includes('Retry transcription')");
+  await run("(()=>{const select=document.querySelector('[aria-label=\"Transcription provider\"]');select.value='openai';select.dispatchEvent(new Event('change',{bubbles:true}))})()");await delay(1200);assert.equal(await run("document.querySelector('[aria-label=\"Transcription provider\"]').value"),'openai','Polling must not reset the selected retry provider');
+  await setKey();await click('Save key');await until("[...document.querySelectorAll('button')].some(b=>b.textContent==='Retry transcription'&&!b.disabled)");await click('Retry transcription');await until("document.querySelector('.transcription-progress')?.textContent.includes('with OpenAI')");assert.equal(requestProvider,'openai');
+  release({language:'english',words:[{word:'First',start:.3,end:.7},{word:'Second',start:2,end:2.5}]});
+  await until("document.querySelectorAll('[data-word]').length===2");assert.equal(await run("document.querySelector('.transcription-progress')===null"),true);
+  await until("document.querySelectorAll('.chapter-item').length===1&&document.querySelector('.local-status')?.textContent==='All edits saved'");assert.equal(chapterRequests,1,'A saved OpenAI key automatically creates chapters after transcription');assert.equal(store.load().project.chapters[0].summary.insights.length,2);
+  await run("(()=>{const word=document.querySelectorAll('[data-word]')[1];word.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));window.getSelection().setPosition(word.firstChild,0);word.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}))})()");await until("!document.querySelector('video').seeking&&Math.abs(document.querySelector('video').currentTime-2)<.1");
+  assert.equal(store.load().recording.words[1].start,2);assert.ok(!fs.readFileSync(store.readConfig().recordingPath,'utf8').includes('test-only-ui-key'));
+  console.log('Automatic transcription UI passed: key gate, real audio extraction, panel progress, cancellation, provider switching, retry, transcript completion, automatic chapters with a saved OpenAI key and word seeking.');
+  clearTimeout(deadline);win.destroy();fs.rmSync(root,{recursive:true,force:true});app.exit(0);
+ }catch(e){console.error(e);clearTimeout(deadline);win?.destroy();app.exit(1)}
+});

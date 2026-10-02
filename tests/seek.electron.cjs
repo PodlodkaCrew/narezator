@@ -18,6 +18,8 @@ if(generated.status!==0)throw Error(String(generated.stderr));
 app.whenReady().then(async()=>{
  let window;
  try{
+  ipcMain.handle('transcription:status',()=>null);
+  ipcMain.handle('transcription:credentials',()=>({elevenlabs:{configured:true,storage:'session'},openai:{configured:false,storage:null}}));
   protocol.handle('narezator-media',request=>new URL(request.url).hostname==='video'?mediaResponse(request,file):new Response('WEBVTT\n',{headers:{'Content-Type':'text/vtt'}}));
   for(const [channel,value] of [['workspace:info',{active:true,projectId:'test',recent:[]}],['recording:load',recording],['project:load',{project,revision:0,projectId:'test'}],['waveform:load',{peaks:[]}],['media:info',{burnedIn:false}],['exports:list',{jobs:[]}]] )ipcMain.handle(channel,()=>value);
   window=new BrowserWindow({show:false,webPreferences:{preload:path.join(__dirname,'../electron/preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});

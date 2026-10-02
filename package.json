@@ -12,10 +12,13 @@
     "test": "node --experimental-strip-types --test tests/*.test.*",
     "test:projects": "npm run build && electron tests/projects.electron.cjs",
     "test:annotations": "npm run build && electron tests/annotations.electron.cjs",
+    "test:chapters": "npm run build && electron tests/chapters.electron.cjs",
+    "test:chapter-generation": "npm run build && electron tests/chapter-generation.electron.cjs",
     "test:seek": "npm run build && electron tests/seek.electron.cjs",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
-    "test:reels-export": "npm run build && electron tests/reels-export.electron.cjs"
+    "test:reels-export": "npm run build && electron tests/reels-export.electron.cjs",
+    "test:transcription": "npm run build && electron tests/transcription.electron.cjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

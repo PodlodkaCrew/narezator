@@ -87,6 +87,37 @@ svg { stroke-width:1.7; }
 .chapter-item small { font-size:10px; display:block; margin-top:5px; }
 .chapter-item small i { font-style:normal; display:inline-block; background:var(--green); border-radius:2px; padding:1px 3px; }
 .chapter-item.missing { opacity:.6; }
+.chapter-card { margin-bottom:7px; padding-bottom:5px; border-radius:3px; }
+.chapter-card.active { background:var(--yellow); }
+.chapter-card .chapter-item { margin-bottom:0; padding-bottom:7px; }
+.chapter-summary-toggle { display:flex; align-items:center; gap:5px; margin:0 8px 3px 42px; padding:4px 0; border:0; background:none; color:var(--ink); font-size:10px; }
+.chapter-summary-toggle:hover { text-decoration:underline; }
+.chapter-summary-toggle .expanded { transform:rotate(180deg); }
+.chapter-summary-toggle:focus-visible { outline:2px solid var(--ink); outline-offset:3px; border-radius:2px; }
+.chapter-summary { margin:6px 8px 3px; padding:10px 7px 5px; border-top:1px solid var(--border); font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
+.chapter-summary p { margin:0 0 8px; }
+.chapter-summary ul { list-style:disc; margin:0; padding-left:16px; }
+.chapter-summary li { padding-left:2px; margin:0 0 7px; }
+.chapter-summary-empty { font-size:11px; opacity:.8; }
+.chapter-summary-loading { display:flex; align-items:center; gap:7px; }
+.chapter-summary-loading svg { flex:none; animation:chapter-summary-spin 1s linear infinite; }
+@keyframes chapter-summary-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .chapter-summary-loading svg { animation:none; } }
+.chapter-summary .project-field { font-size:10px; min-width:0; }
+.chapter-summary .project-field input { width:100%; min-width:0; font-size:11px; }
+.chapter-summary .transcription-remember { align-items:flex-start; font-size:10px; }
+.chapter-summary .export-note,.chapter-summary .transcription-key-status small { font-size:10px; }
+.chapter-summary-actions { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+.chapter-summary-actions>button:last-child { border:0; padding:0; background:none; color:var(--ink); text-decoration:underline; font-size:10px; }
+.chapter-generation-empty { display:flex; flex-direction:column; align-items:flex-start; gap:12px; padding:18px 15px; overflow:auto; flex:1; }
+.chapter-generation-empty h3 { margin:0; font-size:16px; font-weight:400; }
+.chapter-generation-empty p { margin:0; font-size:11px; line-height:1.6; }
+.chapter-generation-empty .transcription-setup { width:100%; min-width:0; }
+.chapter-generation-empty .project-field,.chapter-generation-empty .transcription-remember,.chapter-generation-empty .transcription-key-status small { font-size:10px; }
+.chapter-generation-empty .transcription-remember { align-items:flex-start; }
+.chapter-generation-empty input { min-width:0; width:100%; font-size:11px; }
+.chapter-generation-empty .transcription-remember input { width:auto; flex:none; }
+.chapter-generation-key { border:0; background:none; color:var(--ink); padding:0; font-size:10px; text-decoration:underline; }
 .now-dot { position:absolute; right:7px; bottom:8px; width:5px; height:5px; border-radius:50%; background:var(--ink); }
 .chapter-footnote { flex:none; margin-top:auto; padding:12px; border-top:1px solid var(--border); display:flex; align-items:center; gap:6px; font-size:10px; line-height:1.5; }
 .tiny-dot { display:inline-block; width:5px; height:5px; flex:none; border-radius:50%; background:currentColor; }
@@ -365,3 +396,16 @@ svg { stroke-width:1.7; }
  .clip-mini-wave { display:none; }
  .video-frame { max-height:clamp(100px,calc(100cqh - 365px),32vh); }
 }
+
+.transcription-setup { display:flex; flex-direction:column; gap:12px; }
+.transcription-setup select { padding:9px 10px; border:1px solid var(--ink); border-radius:4px; width:100%; background:var(--cream); color:var(--ink); }
+.transcription-remember { display:flex; align-items:center; gap:8px; font-size:12px; }
+.transcription-key-status { display:flex; align-items:center; gap:10px; }
+.transcription-key-status small { font-size:11px; }
+.transcription-progress { padding:18px; background:var(--yellow); color:var(--ink); display:flex; flex-direction:column; gap:12px; flex-shrink:0; max-height:75%; overflow:auto; border-bottom:1px solid var(--ink); }
+.transcription-progress h3 { font-size:15px; margin:0; }
+.transcription-progress p { font-size:12px; line-height:1.5; margin:0; }
+.transcription-progress progress { width:100%; accent-color:var(--ink); }
+.transcription-progress small { font-size:11px; }
+.transcription-progress .export-note { color:var(--ink); }
+.transcription-progress ~ .editable-transcript .empty-state { display:none; }
