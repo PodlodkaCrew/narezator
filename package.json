@@ -53,7 +53,8 @@
     "productName": "Narezator",
     "directories": {"output": "release"},
     "files": ["dist/**/*", "electron/**/*", "package.json"],
+    "extraResources": [{"from": "build/icon.png", "to": "icon.png"}],
     "asarUnpack": ["node_modules/ffmpeg-static/**/*"],
-    "mac": {"category": "public.app-category.video", "target": ["dmg", "zip"]}
+    "mac": {"category": "public.app-category.video", "icon": "build/icon.icns", "target": ["dmg", "zip"]}
   }
 }
