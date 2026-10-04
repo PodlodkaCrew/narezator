@@ -105,6 +105,7 @@ function createWindow(){
 }
 
 app.whenReady().then(()=>{
+ if(process.platform==='darwin')app.dock.setIcon(app.isPackaged?path.join(process.resourcesPath,'icon.png'):path.join(__dirname,'..','build','icon.png'));
  const legacyRoot=process.env.NAREZATOR_LEGACY_ROOT||process.env.CUTROOM_LEGACY_ROOT;store=new ProjectStore({userData:app.getPath('userData'),resourcesPath:app.isPackaged?process.resourcesPath:path.join(__dirname,'..','public'),legacyRoot});store.initialize();loadJobs();credentials=new TranscriptionCredentials({userData:app.getPath('userData'),safeStorage});transcriptions=new TranscriptionManager({credentials});chapterSummaries=new ChapterSummaries({credentials});chapterGeneration=new ChapterGeneration({credentials});
  protocol.handle('narezator-media',request=>mediaResponse(request,mediaFile(new URL(request.url).hostname)));
  registerIpc();createWindow();app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createWindow()});
